@@ -1,0 +1,33 @@
+mii_rx: declare new_byte and byte_now before the CRC instance uses them
+
+xvlog (Vivado 2025.2) rejects a net used before its declaration:
+  ERROR: [VRFC 10-2938] 'new_byte' is already implicitly declared on line 86
+Verilator and Icarus accept it.  The three wires move up, unchanged.
+
+Against Wish7990 5ec03d4.  To drop once fixed upstream.
+
+--- a/src/mii_rx.sv	2026-09-28 22:04:49.242043556 +0200
++++ b/src/mii_rx.sv	2026-09-28 22:04:49.250043732 +0200
+@@ -75,6 +75,11 @@
+   // actually correct.  The datasheet keeps the two apart deliberately - p. 27
+   // makes FRAM valid only "if there was ... a CRC error", so a dribble nibble
+   // on an otherwise good frame has to stay a dribble nibble and nothing more.
++  wire [7:0] rxd_pad  = {{(8-DATA_W){1'b0}}, rxd};
++  wire [7:0] new_byte = (DATA_W == 4) ? {rxd_pad[3:0], lo_nibble} : rxd_pad;
++  // A whole byte has arrived: always with GMII, on the second nibble with MII.
++  wire       byte_now = (DATA_W == 4) ? odd : 1'b1;
++
+   logic crc_init, crc_en;
+   logic crc_ok;
+   logic [31:0] crc_unused, fcs_unused;
+@@ -93,10 +98,6 @@
+                                            rxd == SFD_SYM);
+   assign crc_en   = (state == RX_DATA) && rx_dv && byte_now;
+ 
+-  wire [7:0] rxd_pad  = {{(8-DATA_W){1'b0}}, rxd};
+-  wire [7:0] new_byte = (DATA_W == 4) ? {rxd_pad[3:0], lo_nibble} : rxd_pad;
+-  // A whole byte has arrived: always with GMII, on the second nibble with MII.
+-  wire       byte_now = (DATA_W == 4) ? odd : 1'b1;
+ 
+   assign active_o     = (state != RX_IDLE);
+   assign byte_count_o = nbytes;

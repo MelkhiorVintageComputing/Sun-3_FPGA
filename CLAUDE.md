@@ -9,8 +9,8 @@ reused here. Read, never modify, anything in it.
 
 Step 1: a core-level simulation (`tb/tb_sun3.sv`) with testbench-supplied
 clocks and a behavioural Wishbone RAM, booting the stock 3/60 PROM (Rev 1.9
-+ noparity). The Suska core reaches the monitor prompt; RD68021 and the
-Wish7990 build are not yet checked. No board layer yet (`boards/`, `syn/`,
++ noparity). The Suska core reaches the monitor prompt, with and without
+`ETH=wish7990`. `CPU=rd68021` does not: see Traps. No board layer yet (`boards/`, `syn/`,
 MIG, MMCM, XDC come in step 2).
 
 ## Commands
@@ -33,7 +33,13 @@ Bring-up aids in `tb_sun3`:
   routine at 0x0FEF2F18 does nothing) and the memory test is skipped.
 - `+trace_from_ms=<t> +trace_until_ms=<t>` (via `XSIMARGS`) logs every bus
   cycle in that window to `trace.txt`: FC, R/W, address, size, how it ended
-  (ack / BERR), data, physical address.
+  (ack / BERR), data, physical address. `+trace_io` leaves out PROM and main
+  memory cycles, so a long window stays small. It samples on rising edges
+  only, so with the RD68021 (both edges) the "ack"/data columns are not
+  reliable.
+- `+watch_from_us=<t> +watch_until_us=<t>` prints AS/DS/RW/FC/A/data, the
+  `C_Sn` windows, WR/RD, DSACK and BERR on every clock edge: for strobe
+  timing.
 - LED (diag register) changes are printed with a timestamp; a CPU that
   makes no bus cycle for 1 ms ends the run with its bus state.
 
@@ -98,6 +104,9 @@ of simulated time per minute at 20 MHz with the Suska core.
 - **EEPROM.** Preloaded; installed memory follows `SUN3_MEM_MIB`, and the
   console is serial A unless `SUN3_FB`.
 - **Ethernet.** Wish7990 behind `SUN3_ETH_WISH7990`, off by default.
+  `patches/Wish7990/` moves declarations ahead of their first use, which
+  xvlog insists on and Verilator/Icarus do not. With it built, the boot is
+  unchanged; the PROM's boot path (`sd`) does not exercise it.
 
 ## Boot PROM
 
@@ -158,6 +167,17 @@ map test alone is ~4.5 s simulated, the RAM fill ~2.4 s, the keyboard wait
 settles it in minutes.
 
 ## Traps
+
+- **The RD68021 is faster than `sun3_fpga`'s write timing.** Its zero-wait
+  cycle is 2 clocks, strobes on rising edges: AS falls, DS falls a clock
+  later, DSACK is sampled on the next falling edge, AS/DS rise on the rising
+  edge after. `sun3_fpga` acknowledges a `C_S4` register from the moment
+  `C_S4` is set, but writes it on a rising edge where `WR & C_S4` still
+  holds -- and with the RD68021 there is none, so writes to the diag
+  register, context, maps... are lost and the PROM loops at its first
+  tests (diag LEDs never change). The Suska core holds its strobes long
+  enough to hide this. Seen with `+watch_from_us=13.0` around the first diag
+  write. Not yet fixed.
 
 - **The RAM fill's end and the monitor's memory size are one register.** At
   0x0FEF2A94 the PROM computes `d2 = megabytes << 20`, copies it to `d1` as

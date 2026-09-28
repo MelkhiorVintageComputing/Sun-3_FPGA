@@ -14,6 +14,7 @@
 //   +trace_from_ms=<t>   log every bus cycle from then on to trace.txt
 //   +trace_until_ms=<t>  ... and stop logging at <t>
 //   +trace_io            ... leaving out PROM and main memory cycles
+//   +watch_from_us=<t> +watch_until_us=<t>  bus signals on every clock edge
 //   +vcd                 dump everything to sun3.vcd (needs SUN3_VCD=1 at
 //                        elaboration for signal visibility)
 //
@@ -139,6 +140,23 @@ module tb_sun3 #(
    uart_console #(.BAUD(BAUD)) console_in (.tx(rx));
 
    // ---- run control -------------------------------------------------------
+   // Bus watch: +watch_from_us=<t> +watch_until_us=<t> prints the bus and the
+   // decode's timing signals on every clock edge in that window -- for a
+   // CPU whose strobes do not line up with sun3_fpga's C_Sn windows.
+   real watch_from_us = -1.0, watch_until_us = -1.0;
+   initial begin
+      void'($value$plusargs("watch_from_us=%f", watch_from_us));
+      void'($value$plusargs("watch_until_us=%f", watch_until_us));
+   end
+   always @(CLK)
+     if (watch_from_us >= 0 && $realtime >= watch_from_us * 1.0e3 && $realtime <= watch_until_us * 1.0e3)
+       $display("[watch %0.3f us] CLK=%b AS=%b DS=%b RW=%b FC=%0d A=%08x SIZ=%0d D_cpu=%08x | C_S3..8=%b%b%b%b WR=%b RD=%b DIAG=%b SYSEN=%b | DSACK=%b BERR=%b D_sys=%08x",
+                $realtime / 1.0e3, CLK, dut.sun3.SUN3_AS_n, dut.sun3.SUN3_DS_n, dut.sun3.SUN3_RW_n,
+                dut.sun3.SUN3_FC, dut.sun3.SUN3_ADR_IN, dut.sun3.SUN3_SIZ, dut.sun3.SUN3_DATA_IN,
+                dut.sun3.C_S3, dut.sun3.C_S4, dut.sun3.C_S6, dut.sun3.C_S8,
+                dut.sun3.WR, dut.sun3.RD, dut.sun3.MATCH_DIAG, dut.sun3.MATCH_SYSEN,
+                dut.sun3.P_DSACK_n, dut.sun3.P_BERR_n, dut.sun3.P_DATA_OUT);
+
    real timeout_ms = 2000.0;
 
    // Where the CPU is, roughly: the last PROM fetch address, for a run that
