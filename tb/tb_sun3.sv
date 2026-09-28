@@ -10,6 +10,9 @@
 // Plusargs:
 //   +timeout_ms=<real>   give up after this much simulated time (default 2000)
 //   +stop_on=<string>    finish as soon as this appears on the console
+//   +diag                set the diag switch: the self test prints as it goes
+//   +trace_from_ms=<t>   log every bus cycle from then on to trace.txt
+//   +trace_until_ms=<t>  ... and stop logging at <t>
 //   +vcd                 dump everything to sun3.vcd (needs SUN3_VCD=1 at
 //                        elaboration for signal visibility)
 //
@@ -49,6 +52,11 @@ module tb_sun3 #(
    end
 
    // ---- DUT ---------------------------------------------------------------
+   // The diag switch: with it on, the PROM narrates its self test on ttya
+   // (and does not autoboot); off, the self test is silent.
+   logic diag_switch = 1'b0;
+   initial diag_switch = $test$plusargs("diag");
+
    wire        tx;
    wire        rx;
    wire        kbd_tx;
@@ -96,7 +104,7 @@ module tb_sun3 #(
       .V_INT       (1'b0),
       .leds        (leds),
       .en_boot     (en_boot),
-      .diag_switch (1'b0),
+      .diag_switch (diag_switch),
       .todebug     (todebug),
       .wb_cyc_o    (wb_cyc),
       .wb_stb_o    (wb_stb),
@@ -139,6 +147,43 @@ module tb_sun3 #(
      if (dut.sun3.MATCH_PROM_BOOT | dut.sun3.MATCH_PROM)
        last_prom_adr <= dut.sun3.SUN3_ADR_IN;
 
+   // Bus cycle trace: +trace_from_ms=<t> logs every CPU (or DVMA) bus cycle
+   // from that simulated time on to trace.txt -- one line per cycle, at the
+   // end of it, with how it ended.
+   // The address as the cycle had it (the bus may have moved by AS negation).
+   logic [31:0] tr_adr;
+   logic [18:0] tr_pa;
+   always @(posedge CLK)
+     if (!dut.sun3.SUN3_AS_n) begin
+        tr_adr <= dut.sun3.SUN3_ADR_IN;
+        tr_pa  <= dut.sun3.ma_pmap2devices;
+     end
+   real  trace_from_ms = -1.0;
+   real  trace_until_ms = 1.0e9;
+   int   tracefd = 0;
+   logic tr_as_q = 1'b1;
+   logic tr_dsack = 1'b0, tr_berr = 1'b0;
+   logic [31:0] tr_data;
+   always @(posedge CLK) begin
+      tr_as_q <= dut.sun3.SUN3_AS_n;
+      if (!dut.sun3.SUN3_AS_n) begin
+         if (dut.sun3.P_DSACK_n != 2'b11) begin
+            tr_dsack <= 1'b1;
+            tr_data  <= dut.sun3.SUN3_RW_n ? dut.sun3.P_DATA_OUT : dut.sun3.SUN3_DATA_IN;
+         end
+         if (!dut.sun3.P_BERR_n) tr_berr <= 1'b1;
+      end
+      if (dut.sun3.SUN3_AS_n && !tr_as_q) begin
+         if (tracefd != 0 && $realtime >= trace_from_ms * 1.0e6 && $realtime <= trace_until_ms * 1.0e6)
+           $fwrite(tracefd, "%0.3f us fc%0d %s %08x siz%0d %s %08x pa=%08x\n",
+                   $realtime / 1.0e3, dut.sun3.SUN3_FC, dut.sun3.SUN3_RW_n ? "R" : "W",
+                   tr_adr, dut.sun3.SUN3_SIZ, tr_berr ? "BERR " : (tr_dsack ? "ack  " : "none "),
+                   tr_data, {tr_pa, tr_adr[12:0]});
+         tr_dsack <= 1'b0;
+         tr_berr  <= 1'b0;
+      end
+   end
+
    task automatic wrap_up(input string why);
       $display("");
       $display("==== %s at %0.3f ms ====", why, $realtime / 1.0e6);
@@ -148,8 +193,29 @@ module tb_sun3 #(
       $finish;
    endtask
 
+   // A CPU that stops making bus cycles: say so once, with where it was.
+   realtime last_as = 0;
+   bit      quiet_reported = 0;
+   always @(negedge dut.sun3.SUN3_AS_n) begin
+      last_as = $realtime;
+      quiet_reported = 0;
+   end
+   always @(posedge CLK)
+     if (!quiet_reported && !sys_reset && $realtime - last_as > 1.0e6) begin
+        quiet_reported = 1;
+        $display("[%0.3f ms] no bus cycle for 1 ms: AS_n=%b FC=%0d A=%08x DSACK_n=%b BERR_n=%b HALT(out)=%b RESET_OUT=%b",
+                 $realtime / 1.0e6, dut.sun3.SUN3_AS_n, dut.sun3.SUN3_FC, dut.sun3.SUN3_ADR_IN,
+                 dut.sun3.P_DSACK_n, dut.sun3.P_BERR_n, dut.HALT_OUTn, dut.RESET_OUT);
+        wrap_up("CPU STOPPED");
+     end
+
    initial begin
       void'($value$plusargs("timeout_ms=%f", timeout_ms));
+      void'($value$plusargs("trace_until_ms=%f", trace_until_ms));
+      if ($value$plusargs("trace_from_ms=%f", trace_from_ms)) begin
+         tracefd = $fopen("trace.txt", "w");
+         $display("tracing bus cycles from %0.3f ms to trace.txt", trace_from_ms);
+      end
       if ($test$plusargs("vcd")) begin
          $dumpfile("sun3.vcd");
          $dumpvars(0, tb_sun3);

@@ -10,3 +10,26 @@
 0fef1e4e c350 0002
 # loweritercount2: 65535 -> 2
 0fef2d5c ffff 0002
+
+# The MMU table tests walk every entry of the segment map (2048 segments x
+# 8 contexts) and the page map (4096 entries), with a console poll per
+# step; at 20 MHz the segment map write/read test alone is ~4.5 s of
+# simulated time.  Test 16 entries instead.  Only the tests' own loop
+# counts change: the setup loops around them (0x0fef2196 fills the segment
+# map, 0x0fef2254 builds the 1:1 page map the PROM runs on afterwards) are
+# left alone.
+
+# Segment Map Wr/Rd Test: movel #2046,%d5 -> #15
+0fef201c 07fe 000f
+# Segment Map Address Test, write pass and check pass: movel #2046,%d5 -> #15
+0fef20c4 07fe 000f
+0fef20fa 07fe 000f
+# Page Map Test, write pass and check pass: movel #4095,%d4 -> #15
+0fef21c2 0fff 000f
+0fef21f8 0fff 000f
+
+# Memory Test (diag switch on only; skipped when it is off): its end address
+# is (megabytes found) << 20, and it writes and then reads back every word,
+# polling the diag switch per word -- ~10 s simulated for 4 MiB.  moveq #20
+# -> #16 tests 64 KiB per megabyte found instead.
+0fef28ba 7014 7010

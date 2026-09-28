@@ -803,7 +803,7 @@ module sun3_fpga(/* clock, reset */
    // as for the real thing, used for debugging (in simulation)
 `ifndef SYNTHESIS
    always @(leds) begin
-      $display("Leds are now %x", ~leds);
+      $display("[%0.3f ms] Leds are now %x", $realtime / 1.0e6, ~leds);
       case (~leds)
 	8'hFF:$display(" => L_RESET");
 	8'h00:$display(" => L_RUNNING");

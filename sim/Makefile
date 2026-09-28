@@ -16,7 +16,8 @@
 #   TIMEOUT_MS=<ms>             simulated time limit, default 2000
 #   STOP_ON=<string>            stop once this is on the console, default "> "
 #   DEFINES="A B=1"             extra `define's
-#   XSIMARGS=...                anything else for xsim
+#   DIAG=1                      diag switch on: the self test prints as it goes
+#   XSIMARGS=...                anything else for xsim, e.g. -testplusarg trace_from_ms=12
 
 CPU         ?= suska
 ROM         ?= fast
@@ -30,6 +31,7 @@ TIMEOUT_MS  ?= 2000
 STOP_ON     ?= >
 DEFINES     ?=
 XSIMARGS    ?=
+DIAG        ?=
 
 TOP = ..
 SHELL = /bin/bash
@@ -51,7 +53,7 @@ export SUN3_DEFINES=$(DEFINES)
 xsim:
 	mkdir -p $(TOP)/build/sim
 	set -o pipefail; ./run_xsim.sh -testplusarg timeout_ms=$(TIMEOUT_MS) \
-		-testplusarg "stop_on=$(STOP_ON)" $(XSIMARGS) 2>&1 | tee $(RUNDIR).log
+		-testplusarg "stop_on=$(STOP_ON)" $(if $(DIAG),-testplusarg diag) $(XSIMARGS) 2>&1 | tee $(RUNDIR).log
 
 check:
 	./check_console.sh $(RUNDIR)/console.log

@@ -23,7 +23,20 @@ board layer yet (`boards/`, `syn/`, MIG, MMCM, XDC come in step 2).
 `sim/Makefile` knobs: `CPU=suska|rd68021`, `ROM=fast|noparity|pristine`,
 `ROM_VER=1.9|2.8.3|3.0.1` (patched variants: 1.9 only), `MEM_MIB`,
 `ETH=none|wish7990`, `MEM_LATENCY`, `CPU_HZ`, `BAUD`, `TIMEOUT_MS`,
-`STOP_ON`, `DEFINES`, `XSIMARGS`. Each configuration gets its own run
+`STOP_ON`, `DIAG`, `DEFINES`, `XSIMARGS`.
+
+Bring-up aids in `tb_sun3`:
+- `DIAG=1` (`+diag`) turns the diag switch on. The PROM then prints each
+  self test on ttya; with it off the self test is **silent** (the print
+  routine at 0x0FEF2F18 does nothing) and the memory test is skipped.
+- `+trace_from_ms=<t> +trace_until_ms=<t>` (via `XSIMARGS`) logs every bus
+  cycle in that window to `trace.txt`: FC, R/W, address, size, how it ended
+  (ack / BERR), data, physical address.
+- LED (diag register) changes are printed with a timestamp; a CPU that
+  makes no bus cycle for 1 ms ends the run with its bus state.
+
+Running the same configuration twice at once is not possible (same run
+directory); a different `ROM` gives a separate one. Each configuration gets its own run
 directory `build/sim/xsim-<tag>/` (with `console.log`), and its full
 transcript is `build/sim/xsim-<tag>.log`.
 
@@ -90,10 +103,16 @@ of simulated time per minute at 20 MHz with the Suska core.
 1.9 twice). The simulation default is `fast` = Rev 1.9 + `noparity` +
 `fastboot`:
 
-- `tools/sun3_60_v1.9_noparity.txt`: no parity hardware (NMI handler, parity
+- `tools/sun3_60_v1.9_noparity.txt`: **mandatory**, the minimum patch set. The
+  stock PROM tests parity, including by forcing a parity error, and main
+  memory here has none (nor will the non-parity DDR3). So `ROM=pristine`
+  is expected to fail and is only a diagnostic. No parity hardware (NMI handler, parity
   enable, tests 0x0E/0x0F, post-memory-test register checks). Transcribed
   from Old's RomPatcher NoParity image; `make -C tools check` proves it.
-- `tools/sun3_60_v1.9_fastboot.txt`: two waiting loops cut to 2 iterations.
+- `tools/sun3_60_v1.9_fastboot.txt`, simulation only: two waiting loops cut
+  to 2 iterations; the segment map and page map tests cut to 16 entries
+  (their setup loops untouched); the diag-mode memory test cut to 64 KiB per
+  megabyte found.
 
 The last word of a Sun-3 PROM is the 16-bit byte sum of the rest, checked by
 the PROM itself (the loop at 0x0FEF1F4A reads all 64 KiB through `moves` and
@@ -102,6 +121,17 @@ takes ~100 ms simulated); `rompatch` verifies it on input and rewrites it.
 The PROM in Old (`bootrom_patched_32bits.v`, "Rev 2.1F / Sun-3/F") is a
 custom rebuild from an older PROM source tree, with LiteDRAM bring-up in it.
 It is not a patched stock image and is not used here.
+
+## Self test, as measured
+
+Rev 1.9 `fast`, Suska, 20 MHz, `DIAG=1`: every test up to and including the
+memory size passes -- PROM checksum, context register, segment map wr/rd and
+address, page map, memory path, NXM bus error, interrupt, TOD interrupt, MMU
+access / modify / invalid / protected page, "Memory Size = 0x00000004
+Megabytes". Timeline (diag off): walking LEDs by 0.1 ms, PROM checksum done
+at 339 ms. A bus cycle is 8 clocks (400 ns) and the Suska core fetches
+instructions 16 bits at a time, so the unshortened segment map test alone
+is ~4.5 s simulated -- slow, not stuck.
 
 ## Traps
 
