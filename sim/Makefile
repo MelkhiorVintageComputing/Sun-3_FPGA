@@ -56,7 +56,7 @@ xsim:
 		-testplusarg "stop_on=$(STOP_ON)" $(if $(DIAG),-testplusarg diag) $(XSIMARGS) 2>&1 | tee $(RUNDIR).log
 
 check:
-	./check_console.sh $(RUNDIR)/console.log
+	./check_console.sh $(RUNDIR)/console.log $(MEM_MIB)
 
 clean:
 	rm -rf $(TOP)/build/sim

@@ -8,8 +8,10 @@ reused here. Read, never modify, anything in it.
 ## Status
 
 Step 1: a core-level simulation (`tb/tb_sun3.sv`) with testbench-supplied
-clocks and a behavioural Wishbone RAM, booting the stock 3/60 PROM. No
-board layer yet (`boards/`, `syn/`, MIG, MMCM, XDC come in step 2).
+clocks and a behavioural Wishbone RAM, booting the stock 3/60 PROM (Rev 1.9
++ noparity). The Suska core reaches the monitor prompt; RD68021 and the
+Wish7990 build are not yet checked. No board layer yet (`boards/`, `syn/`,
+MIG, MMCM, XDC come in step 2).
 
 ## Commands
 
@@ -18,7 +20,7 @@ board layer yet (`boards/`, `syn/`, MIG, MMCM, XDC come in step 2).
 | `make -C tools` | unpack and checksum the PROMs, build the patched variants and the Verilog includes in `build/rom/` |
 | `make -C tools check` | the noparity patch list reproduces the Old RomPatcher image bit for bit |
 | `make -C sim xsim` | compile, elaborate and run `tb_sun3` under xsim; stops on the `>` prompt |
-| `make -C sim check` | grep that run's `console.log` for a good boot. **Does not run anything**: rerun `xsim` first |
+| `make -C sim check` | grep that run's `console.log` for a good boot (self test, banner, `MEM_MIB` MB installed, prompt). **Does not run anything**: rerun `xsim` first |
 
 `sim/Makefile` knobs: `CPU=suska|rd68021`, `ROM=fast|noparity|pristine`,
 `ROM_VER=1.9|2.8.3|3.0.1` (patched variants: 1.9 only), `MEM_MIB`,
@@ -109,10 +111,12 @@ of simulated time per minute at 20 MHz with the Suska core.
   is expected to fail and is only a diagnostic. No parity hardware (NMI handler, parity
   enable, tests 0x0E/0x0F, post-memory-test register checks). Transcribed
   from Old's RomPatcher NoParity image; `make -C tools check` proves it.
-- `tools/sun3_60_v1.9_fastboot.txt`, simulation only: two waiting loops cut
-  to 2 iterations; the segment map and page map tests cut to 16 entries
-  (their setup loops untouched); the diag-mode memory test cut to 64 KiB per
-  megabyte found.
+- `tools/sun3_60_v1.9_fastboot.txt`, simulation only, on top of noparity:
+  two waiting loops cut to 2 iterations; the segment and page map tests cut
+  to 16 entries (their setup loops untouched); the diag-mode memory test cut
+  to 64 KiB per megabyte found; the RAM initialisation fill cut to 64 KiB per
+  megabyte (by shortening its loop bound only -- see Traps); the wait for a
+  keyboard's reply cut from 1000 timer ticks to 10.
 
 The last word of a Sun-3 PROM is the 16-bit byte sum of the rest, checked by
 the PROM itself (the loop at 0x0FEF1F4A reads all 64 KiB through `moves` and
@@ -122,18 +126,48 @@ The PROM in Old (`bootrom_patched_32bits.v`, "Rev 2.1F / Sun-3/F") is a
 custom rebuild from an older PROM source tree, with LiteDRAM bring-up in it.
 It is not a patched stock image and is not used here.
 
-## Self test, as measured
+## Boot, as measured
 
-Rev 1.9 `fast`, Suska, 20 MHz, `DIAG=1`: every test up to and including the
-memory size passes -- PROM checksum, context register, segment map wr/rd and
-address, page map, memory path, NXM bus error, interrupt, TOD interrupt, MMU
-access / modify / invalid / protected page, "Memory Size = 0x00000004
-Megabytes". Timeline (diag off): walking LEDs by 0.1 ms, PROM checksum done
-at 339 ms. A bus cycle is 8 clocks (400 ns) and the Suska core fetches
-instructions 16 bits at a time, so the unshortened segment map test alone
-is ~4.5 s simulated -- slow, not stuck.
+Rev 1.9 `fast`, Suska, 20 MHz, 4 MiB, diag switch off: `make -C sim xsim`
+reaches the monitor prompt at 1738.7 ms simulated (~17 min wall clock) and
+`make -C sim check` passes:
+
+    Selftest Completed.
+    Sun Workstation, Model Sun-3/60M.
+    ROM Rev 1.9, 4MB memory installed, Serial #33954.
+    Ethernet address 8:0:20:11:22:33.
+    EEPROM: Using RS232 A port.
+    (banner again, once the console has moved to ttya)
+    Testing 0 Megabytes of Memory ... Completed.
+    Auto-boot in progress...
+    EEPROM boot device...sd(0,0,0)
+    Device not found
+    >
+
+Timeline: walking LEDs by 0.1 ms, PROM checksum done at 339 ms, MMU tests
+432 ms, RAM initialisation, maps set up (diag `F2`) at 584 ms, SCCs
+initialised ~960 ms, keyboard wait, banner. With `DIAG=1` each self test is
+named on ttya and all pass (checksum, context register, segment and page
+maps, memory path, NXM bus error, interrupt, TOD interrupt, MMU
+access/modify/invalid/protected, memory size = 4 MB).
+
+A bus cycle is 8 clocks (400 ns) and the Suska core fetches instructions 16
+bits at a time, so the PROM is slow in simulation: the unshortened segment
+map test alone is ~4.5 s simulated, the RAM fill ~2.4 s, the keyboard wait
+~1 s. Every "hang" so far was one of these; a `+trace_from_ms` window
+settles it in minutes.
 
 ## Traps
+
+- **The RAM fill's end and the monitor's memory size are one register.** At
+  0x0FEF2A94 the PROM computes `d2 = megabytes << 20`, copies it to `d1` as
+  the fill's bound, and later stores `d2` as the memory size the banner
+  prints. Shortening the fill by changing the shift made the banner say
+  "0MB"; patch the bound (`d1`), never the shift. `check_console.sh` checks
+  the reported size against `MEM_MIB` for exactly this reason.
+- **With no keyboard, a normal boot waits for one** (~1 s simulated) after
+  the SCCs are set up, and the LEDs show the timer interrupt's pattern
+  meanwhile -- it looks like an idle monitor with a dead console.
 
 - **`make -C sim check` does not boot anything.** It will pass on a stale
   log.

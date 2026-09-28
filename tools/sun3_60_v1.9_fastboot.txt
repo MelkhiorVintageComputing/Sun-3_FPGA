@@ -33,3 +33,26 @@
 # polling the diag switch per word -- ~10 s simulated for 4 MiB.  moveq #20
 # -> #16 tests 64 KiB per megabyte found instead.
 0fef28ba 7014 7010
+
+# RAM initialisation (always, diag switch or not): fills every longword of
+# the memory found with 0xffffffff, from 0 up to %d1.  At ~2.3 us a longword
+# that is ~2.4 s simulated for 4 MiB.  %d1 is a copy of %d2 = (megabytes
+# found) << 20, and %d2 is ALSO what the monitor keeps as the memory size
+# (0xffffe172, the "NMB memory installed" of the banner) -- so the shift at
+# 0x0fef2a94 must not change (it once did here: the banner said 0MB).
+# Instead the bound's >= 32 MiB clamp (cmpil/bltw/subil, moot below 32 MiB)
+# becomes lsrl #4,%d1: 64 KiB filled per megabyte, still from 0, so the low
+# memory the monitor keeps its data in is still initialised.
+0fef2a9e 0c81 e889
+0fef2aa0 0200 4e71
+0fef2aa2 0000 4e71
+0fef2aa4 6d00 4e71
+0fef2aa6 0008 4e71
+0fef2aa8 0481 4e71
+0fef2aaa 0010 4e71
+0fef2aac 0000 4e71
+
+# Keyboard detection: after resetting the keyboard the PROM waits up to 1000
+# timer ticks (~1 s) for its reply -- the whole wait, every boot, when there
+# is no keyboard.  addil #1000,%d7 -> #10.
+0fef1a62 03e8 000a

@@ -13,6 +13,7 @@
 //   +diag                set the diag switch: the self test prints as it goes
 //   +trace_from_ms=<t>   log every bus cycle from then on to trace.txt
 //   +trace_until_ms=<t>  ... and stop logging at <t>
+//   +trace_io            ... leaving out PROM and main memory cycles
 //   +vcd                 dump everything to sun3.vcd (needs SUN3_VCD=1 at
 //                        elaboration for signal visibility)
 //
@@ -160,6 +161,8 @@ module tb_sun3 #(
      end
    real  trace_from_ms = -1.0;
    real  trace_until_ms = 1.0e9;
+   bit   trace_io = 0;       // only control space and devices
+   logic tr_mem = 1'b0;
    int   tracefd = 0;
    logic tr_as_q = 1'b1;
    logic tr_dsack = 1'b0, tr_berr = 1'b0;
@@ -172,15 +175,18 @@ module tb_sun3 #(
             tr_data  <= dut.sun3.SUN3_RW_n ? dut.sun3.P_DATA_OUT : dut.sun3.SUN3_DATA_IN;
          end
          if (!dut.sun3.P_BERR_n) tr_berr <= 1'b1;
+         if (dut.sun3.MATCH_MEM | dut.sun3.MATCH_PROM_BOOT | dut.sun3.MATCH_PROM) tr_mem <= 1'b1;
       end
       if (dut.sun3.SUN3_AS_n && !tr_as_q) begin
-         if (tracefd != 0 && $realtime >= trace_from_ms * 1.0e6 && $realtime <= trace_until_ms * 1.0e6)
+         if (tracefd != 0 && $realtime >= trace_from_ms * 1.0e6 && $realtime <= trace_until_ms * 1.0e6 &&
+             !(trace_io && tr_mem))
            $fwrite(tracefd, "%0.3f us fc%0d %s %08x siz%0d %s %08x pa=%08x\n",
                    $realtime / 1.0e3, dut.sun3.SUN3_FC, dut.sun3.SUN3_RW_n ? "R" : "W",
                    tr_adr, dut.sun3.SUN3_SIZ, tr_berr ? "BERR " : (tr_dsack ? "ack  " : "none "),
                    tr_data, {tr_pa, tr_adr[12:0]});
          tr_dsack <= 1'b0;
          tr_berr  <= 1'b0;
+         tr_mem   <= 1'b0;
       end
    end
 
@@ -212,6 +218,7 @@ module tb_sun3 #(
    initial begin
       void'($value$plusargs("timeout_ms=%f", timeout_ms));
       void'($value$plusargs("trace_until_ms=%f", trace_until_ms));
+      trace_io = $test$plusargs("trace_io");
       if ($value$plusargs("trace_from_ms=%f", trace_from_ms)) begin
          tracefd = $fopen("trace.txt", "w");
          $display("tracing bus cycles from %0.3f ms to trace.txt", trace_from_ms);
