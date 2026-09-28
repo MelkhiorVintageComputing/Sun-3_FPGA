@@ -11,6 +11,7 @@
 //   +timeout_ms=<real>   give up after this much simulated time (default 2000)
 //   +stop_on=<string>    finish as soon as this appears on the console
 //   +diag                set the diag switch: the self test prints as it goes
+//   +stall_ms=<t>        end the run after this long with no bus cycle (default 100)
 //   +trace_from_ms=<t>   log every bus cycle from then on to trace.txt
 //   +trace_until_ms=<t>  ... and stop logging at <t>
 //   +trace_io            ... leaving out PROM and main memory cycles
@@ -148,7 +149,10 @@ module tb_sun3 #(
       void'($value$plusargs("watch_from_us=%f", watch_from_us));
       void'($value$plusargs("watch_until_us=%f", watch_until_us));
    end
+   // Sampled 1 ns after each edge, so what is printed is what that edge left
+   // behind -- flops updated, combinational logic settled.
    always @(CLK)
+     if (watch_from_us >= 0) #1
      if (watch_from_us >= 0 && $realtime >= watch_from_us * 1.0e3 && $realtime <= watch_until_us * 1.0e3)
        $display("[watch %0.3f us] CLK=%b AS=%b DS=%b RW=%b FC=%0d A=%08x SIZ=%0d D_cpu=%08x | C_S3..8=%b%b%b%b WR=%b RD=%b DIAG=%b SYSEN=%b | DSACK=%b BERR=%b D_sys=%08x",
                 $realtime / 1.0e3, CLK, dut.sun3.SUN3_AS_n, dut.sun3.SUN3_DS_n, dut.sun3.SUN3_RW_n,
@@ -218,6 +222,11 @@ module tb_sun3 #(
    endtask
 
    // A CPU that stops making bus cycles: say so once, with where it was.
+   // A CPU with an instruction cache (the RD68021's) runs a tight loop with no
+   // bus cycle at all -- the PROM's TOD interrupt test waits like that -- so
+   // "quiet" has to mean quiet for much longer than one loop takes.
+   real     stall_ms = 100.0;
+   initial void'($value$plusargs("stall_ms=%f", stall_ms));
    realtime last_as = 0;
    bit      quiet_reported = 0;
    always @(negedge dut.sun3.SUN3_AS_n) begin
@@ -225,10 +234,10 @@ module tb_sun3 #(
       quiet_reported = 0;
    end
    always @(posedge CLK)
-     if (!quiet_reported && !sys_reset && $realtime - last_as > 1.0e6) begin
+     if (!quiet_reported && !sys_reset && $realtime - last_as > stall_ms * 1.0e6) begin
         quiet_reported = 1;
-        $display("[%0.3f ms] no bus cycle for 1 ms: AS_n=%b FC=%0d A=%08x DSACK_n=%b BERR_n=%b HALT(out)=%b RESET_OUT=%b",
-                 $realtime / 1.0e6, dut.sun3.SUN3_AS_n, dut.sun3.SUN3_FC, dut.sun3.SUN3_ADR_IN,
+        $display("[%0.3f ms] no bus cycle for %0.1f ms: AS_n=%b FC=%0d A=%08x DSACK_n=%b BERR_n=%b HALT(out)=%b RESET_OUT=%b",
+                 $realtime / 1.0e6, stall_ms, dut.sun3.SUN3_AS_n, dut.sun3.SUN3_FC, dut.sun3.SUN3_ADR_IN,
                  dut.sun3.P_DSACK_n, dut.sun3.P_BERR_n, dut.HALT_OUTn, dut.RESET_OUT);
         wrap_up("CPU STOPPED");
      end

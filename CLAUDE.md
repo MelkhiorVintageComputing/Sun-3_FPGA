@@ -10,7 +10,8 @@ reused here. Read, never modify, anything in it.
 Step 1: a core-level simulation (`tb/tb_sun3.sv`) with testbench-supplied
 clocks and a behavioural Wishbone RAM, booting the stock 3/60 PROM (Rev 1.9
 + noparity). The Suska core reaches the monitor prompt, with and without
-`ETH=wish7990`. `CPU=rd68021` does not: see Traps. No board layer yet (`boards/`, `syn/`,
+`ETH=wish7990`. `CPU=rd68021` got past the AVEC problem (see Traps)
+and is being checked. No board layer yet (`boards/`, `syn/`,
 MIG, MMCM, XDC come in step 2).
 
 ## Commands
@@ -38,8 +39,11 @@ Bring-up aids in `tb_sun3`:
   only, so with the RD68021 (both edges) the "ack"/data columns are not
   reliable.
 - `+watch_from_us=<t> +watch_until_us=<t>` prints AS/DS/RW/FC/A/data, the
-  `C_Sn` windows, WR/RD, DSACK and BERR on every clock edge: for strobe
-  timing.
+  `C_Sn` windows, WR/RD, DSACK and BERR 1 ns after every clock edge, i.e.
+  what each edge left behind: for strobe timing.
+- A run with no bus cycle for `+stall_ms` (default 100) ends with the bus
+  state. It is not 1 ms, because the RD68021's instruction cache runs tight
+  loops with no bus cycles at all.
 - LED (diag register) changes are printed with a timestamp; a CPU that
   makes no bus cycle for 1 ms ends the run with its bus state.
 
@@ -168,17 +172,16 @@ settles it in minutes.
 
 ## Traps
 
-- **The RD68021 is faster than `sun3_fpga`'s write timing.** Its zero-wait
-  cycle is 2 clocks, strobes on rising edges: AS falls, DS falls a clock
-  later, DSACK is sampled on the next falling edge, AS/DS rise on the rising
-  edge after. `sun3_fpga` acknowledges a `C_S4` register from the moment
-  `C_S4` is set, but writes it on a rising edge where `WR & C_S4` still
-  holds -- and with the RD68021 there is none, so writes to the diag
-  register, context, maps... are lost and the PROM loops at its first
-  tests (diag LEDs never change). The Suska core holds its strobes long
-  enough to hide this. Seen with `+watch_from_us=13.0` around the first diag
-  write. Not yet fixed.
-
+- **AVEC only in interrupt acknowledge.** The old glue tied AVEC low
+  permanently. The Suska core ignores AVEC outside IACK, as the MC68020 UM
+  says a CPU must ("AVEC is ignored during all other bus cycles"). The
+  RD68021 does not: it terminates any cycle on AVEC, at S3, before a slow
+  device has acknowledged. So every write to the diag register, context,
+  maps... was lost and the PROM looped at its first tests. `sun3_fpga` now
+  asserts AVEC only for FC=7, A19-A16=0xF. Reported upstream
+  (`RD68021-AVEC-terminates-any-cycle.md`, not committed). It was found with
+  the edge-exact `+watch_from_us` plus the core's `u_biu` state; the first
+  reading, a write-timing problem in `sun3_fpga`, was wrong.
 - **The RAM fill's end and the monitor's memory size are one register.** At
   0x0FEF2A94 the PROM computes `d2 = megabytes << 20`, copies it to `d1` as
   the fill's bound, and later stores `d2` as the memory size the banner

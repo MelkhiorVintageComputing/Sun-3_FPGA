@@ -119,7 +119,6 @@ module sun3_fpga(/* clock, reset */
    //assign P_BGACK_n = 1'b1;
 
 
-   assign P_AVEC_n = 1'b0;
    assign P_STERM_n = 1'b1; // 68k30l has sterm, '020 doesn't
    
    wire 			 EN_DEV;
@@ -137,6 +136,13 @@ module sun3_fpga(/* clock, reset */
    wire 			 SUN3_RW_n;
    wire 			 SUN3_DS_n;
    wire 			 MATCH_PROM_BOOT;
+
+   // Every interrupt on this machine is autovectored -- but AVEC means that
+   // only in an interrupt acknowledge cycle (CPU space, FC=7, A19-A16=0xF),
+   // so it is asserted only there.  Tied low permanently, as it once was, the
+   // RD68021 took it as the termination of every bus cycle (it samples AVEC
+   // with DSACK), ending each one at S3 before a slow device had seen it.
+   assign P_AVEC_n = ~((SUN3_FC == 3'h7) & (SUN3_ADR_IN[19:16] == 4'hF) & ~SUN3_AS_n);
 
    // layers shortcuts
    wire FC_CTRLLAYER;
