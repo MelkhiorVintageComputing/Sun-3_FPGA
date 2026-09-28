@@ -1,0 +1,27 @@
+[submodule "Inputs/Suska_Configware"]
+	path = Inputs/Suska_Configware
+	url = git@github.com:MelkhiorVintageComputing/Suska_Configware.git
+[submodule "Inputs/z8530_scc"]
+	path = Inputs/z8530_scc
+	url = https://github.com/vz50938/z8530_scc
+[submodule "Inputs/RD68021"]
+	path = Inputs/RD68021
+	url = git@github.com:MelkhiorVintageComputing/RD68021.git
+[submodule "Inputs/Wish7990"]
+	path = Inputs/Wish7990
+	url = git@github.com:MelkhiorVintageComputing/Wish7990
+[submodule "Inputs/Wish5380"]
+	path = Inputs/Wish5380
+	url = git@github.com:MelkhiorVintageComputing/Wish5380.git
+[submodule "Inputs/hdmi"]
+	path = Inputs/hdmi
+	url = https://github.com/hdl-util/hdmi
+[submodule "Inputs/doc/QM_XC7A100T_WUKONG_BOARD"]
+	path = Inputs/doc/QM_XC7A100T_WUKONG_BOARD
+	url = https://github.com/ChinaQMTECH/QM_XC7A100T_WUKONG_BOARD
+[submodule "Inputs/doc/MC68030_Doc_More_Readable"]
+	path = Inputs/doc/MC68030_Doc_More_Readable
+	url = https://github.com/MelkhiorVintageComputing/MC68030_Doc_More_Readable
+[submodule "Inputs/ref/qemu-sun3"]
+	path = Inputs/ref/qemu-sun3
+	url = https://github.com/MelkhiorVintageComputing/qemu-sun3

@@ -1,0 +1,16 @@
+*~
+Old
+/build/
+/tools/rom
+/tools/rompatch
+*.vcd
+*.log
+*.jou
+*.pb
+*.wdb
+xsim.dir/
+.Xil/
+work-obj*.cf
+clockInfo.txt
+hs_err_pid*.log
+*.str

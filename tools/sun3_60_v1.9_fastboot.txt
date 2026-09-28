@@ -1,0 +1,12 @@
+# Sun 3/60 PROM Rev 1.9: shorten two waiting loops, for simulation only.
+#
+# Applied on top of sun3_60_v1.9_noparity.txt, as in the RomPatcher set it
+# comes from (Old/VintageBusFPGA_Common/RomPatcher/Sun3_60FastBoot).  Both
+# words are iteration counts; 2 keeps the loops running, just not for long.
+#
+# Line format: <address> <expected> <new>   (hex, 16-bit words, PROM at 0x0fef0000)
+
+# loweritercount: 50000 -> 2
+0fef1e4e c350 0002
+# loweritercount2: 65535 -> 2
+0fef2d5c ffff 0002

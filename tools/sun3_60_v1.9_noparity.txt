@@ -1,0 +1,69 @@
+# Sun 3/60 PROM Rev 1.9: run without parity hardware.
+#
+# The replica has no parity memory, no memory error interrupt and a memory
+# error register that only stores what is written to it.  The stock PROM
+# enables parity checking, tests it (self tests 0x0E and 0x0F force parity
+# errors and expect the level 7 interrupt), and reads the memory error
+# register from its NMI handler.  These patches take all of that out.
+#
+# Transcribed word for word from the verified RomPatcher set in
+# Old/VintageBusFPGA_Common/RomPatcher/Sun3_60NoParity (rompatch.s there has
+# the source); the words below are its output diffed against the pristine
+# image.  0x0fe08000 is the monitor's virtual address for the memory error
+# register (OBIO 0x80000).
+#
+# Line format: <address> <expected> <new>   (hex, 16-bit words, PROM at 0x0fef0000)
+
+# fixIrq7Handler: the level 7 handler does `move.b 0x0fe08000,%d0'; make it
+# `move.b #0,%d0; nop' so it never reads the memory error register.
+0fef03a4 1039 103c
+0fef03a6 0fe0 0000
+0fef03a8 8000 4e71
+
+# fixMonReset: `move.b #0x50,0x0fe08000' (enable parity checking) -> 4x nop.
+0fef188c 13fc 4e71
+0fef188e 0050 4e71
+0fef1890 0fe0 4e71
+0fef1892 8000 4e71
+
+# bypassTest0Eand0F: skip the parity memory error test and the forced parity
+# error test, jumping straight to the memory sizing printout.
+0fef26da 1e3c 4efb
+0fef26dc fff1 0170
+0fef26de 49f9 0000
+0fef26e0 0fef 017a
+0fef26e2 ce2a 4e71
+
+# patch_test_10_memory_test_1: don't enable parity before the memory test
+# (`move.b #0x50,0x0fff4000').
+0fef2920 13fc 4e71
+0fef2922 0050 4e71
+0fef2924 0fff 4e71
+0fef2926 4000 4e71
+
+# patch_test_10_memory_test_2: drop the check of the memory error registers
+# after the memory test, and their reset.
+0fef299c 1439 4e71
+0fef299e 0fff 4e71
+0fef29a0 4000 4e71
+0fef29a2 23fc 4e71
+0fef29a4 0000 4e71
+0fef29a6 0000 4e71
+0fef29a8 0fff 4e71
+0fef29aa 4004 4e71
+0fef29ac 49f9 4e71
+0fef29ae 0fef 4e71
+0fef29b0 ce38 4e71
+0fef29b2 0802 4e71
+0fef29b4 0007 4e71
+0fef29b6 6600 4e71
+0fef29b8 0008 4e71
+0fef29ba 49f9 4e71
+0fef29bc 0fef 4e71
+0fef29be cf18 4e71
+
+# fixMonitor_Key_K: the monitor's `k' (reset) command clears the parity
+# control register with `clr.b 0x0fe08000' -> 3x nop.
+0fef4070 4239 4e71
+0fef4072 0fe0 4e71
+0fef4074 8000 4e71
