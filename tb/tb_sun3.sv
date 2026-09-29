@@ -11,6 +11,7 @@
 //   +timeout_ms=<real>   give up after this much simulated time (default 2000)
 //   +stop_on=<string>    finish as soon as this appears on the console
 //   +diag                set the diag switch: the self test prints as it goes
+//   +type=<line>         at the prompt, type <line> and stop at the next prompt
 //   +stall_ms=<t>        end the run after this long with no bus cycle (default 100)
 //   +trace_from_ms=<t>   log every bus cycle from then on to trace.txt
 //   +trace_until_ms=<t>  ... and stop logging at <t>
@@ -23,12 +24,17 @@
 //   CPU_HZ        CPU/bus clock (default 20 MHz, as the old build ran)
 //   BAUD          console decode rate (default 9600)
 //   MEM_LATENCY   Wishbone wait states before ack (default 0)
+//   MEM_FILL      what never-written memory reads as (default 0)
 //
 
 module tb_sun3 #(
     parameter int CPU_HZ      = 20000000,
     parameter int BAUD        = 9600,
-    parameter int MEM_LATENCY = 0
+    parameter int MEM_LATENCY = 0,
+    // What a never-written word of memory reads as.  0 by default; a real
+    // machine's PROM fills all of memory with 0xFFFFFFFF, which the fast ROM
+    // only does for 64 KiB per megabyte.
+    parameter logic [31:0] MEM_FILL = 32'h00000000
 ) ();
 
    // ---- clocks ------------------------------------------------------------
@@ -122,7 +128,7 @@ module tb_sun3 #(
    // ---- main memory -------------------------------------------------------
    wire [127:0] wb_line_unused;
 
-   wb_ram_model #(.ACK_LATENCY(MEM_LATENCY)) mem (
+   wb_ram_model #(.ACK_LATENCY(MEM_LATENCY), .FILL(MEM_FILL)) mem (
       .clk      (CLK),
       .reset    (sys_reset),
       .wb_cyc_i (wb_cyc),
@@ -261,10 +267,22 @@ module tb_sun3 #(
       wrap_up("TIMEOUT");
    end
 
-   // Let the line finish printing before stopping.
+   // Let the line finish printing before stopping -- or, with +type=<line>,
+   // type that line at the prompt first and stop at the next one.
+   string type_line = "";
+   initial void'($value$plusargs("type=%s", type_line));
+
    always @(posedge console_mon.stop_seen) begin
       #1000000;
-      wrap_up("STOP STRING SEEN");
+      if (type_line.len() > 0) begin
+         bit ok;
+         $display("\n[%0.3f ms] typing \"%s\"", $realtime / 1.0e6, type_line);
+         console_in.send_line(type_line);
+         console_mon.wait_for(">", 2000_000_000.0, ok);
+         #1000000;
+         wrap_up(ok ? "TYPED, PROMPT AGAIN" : "TYPED, NO PROMPT");
+      end else
+         wrap_up("STOP STRING SEEN");
    end
 
 endmodule

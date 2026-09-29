@@ -518,8 +518,9 @@ module sun3_fpga(/* clock, reset */
 `ifdef SUN3_FB
    assign MATCH_FB       = (EN_DEV) & (TYPE == 2'h0) & !DISACC & (ma_pmap2devices[18:11] == 8'hFF) & (ma_pmap2devices[10:5] == 6'h00) & C_S6; // BW: 256 KiB
 `else
-   // No frame buffer: the PROM's bw2 probe must time out, or it takes the
-   // frame buffer for its console and the serial port goes quiet.
+   // No video memory: the PROM's bw2 probe times out.  Not what a real 3/60
+   // looks like -- they all have it -- and the monitor is not entirely happy
+   // without it (see SUN3_FB in sun3_config.vh).
    assign MATCH_FB       = 1'b0;
 `endif
        
@@ -538,7 +539,10 @@ module sun3_fpga(/* clock, reset */
    wire 			 timer_bus_en;
    wire 			 timer_int_n;
    
- icm7170 timerchip(.CLK(CLK),
+   // The TOD divides CLK down itself, so it has to know CLK's frequency: the
+   // old build left FREQ at its 19.6608 MHz default under a 20 MHz CLK, and
+   // time ran 1.7% fast.
+ icm7170 #(.FREQ(`SUN3_CPU_HZ)) timerchip(.CLK(CLK),
 		   .RESETn(~sys_reset), // no reset on real HW
 		   .A(SUN3_ADR_IN[4:0]),
 		   .D_IN(EXTRACT_8BITS(SUN3_DATA_IN, SUN3_ADR_IN[1:0])),

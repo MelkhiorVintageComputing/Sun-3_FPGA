@@ -8,10 +8,18 @@
 //
 //   SUN3_CPU_RD68021     build Inputs/RD68021 instead of the Suska 68K30L
 //   SUN3_ETH_WISH7990    the on-board Ethernet, Wish7990 (Am79C90), at OBIO 0x120000
-//   SUN3_FB              the bw2 frame buffer window (off: the PROM's probe
-//                        times out and the console is serial A)
+//   SUN3_FB              the on-board bw2 video memory, at the top of DDR3
+//                        (on unless SUN3_NO_FB).  Every real 3/60 has it and the PROM assumes it
+//                        (without it the monitor's `h' draws into an
+//                        unmapped page).  It does not move the console.
+//   SUN3_FB_CONSOLE      the EEPROM names the screen as the console (needs
+//                        SUN3_FB and a video output); otherwise serial A
 //   SUN3_MEM_MIB         installed main memory, in MiB
-//   SUN3_BOOTROM_FILE    the boot PROM case body, from build/rom/
+//   SUN3_CPU_HZ          the CPU clock (CLK), in Hz: the TOD chip counts it.
+//                        Must match the clock actually supplied; the sim
+//                        and syn flows set both from one variable.
+//   SUN3_BOOTROM_FILE    the boot PROM case body, from build/rom/ (or
+//                        SUN3_BOOTROM_SELECTED, see below)
 //   DEVICE_8BITS_ON_32BITS_BUS
 //                        byte devices answer as 32-bit ports with the byte
 //                        replicated on all lanes (on unless SUN3_BYTE_PORTS_8)
@@ -19,12 +27,27 @@
 `ifndef SUN3_CONFIG_VH
 `define SUN3_CONFIG_VH
 
+`ifndef SUN3_CPU_HZ
+ `define SUN3_CPU_HZ 20000000
+`endif
+
 `ifndef SUN3_MEM_MIB
  `define SUN3_MEM_MIB 4
 `endif
 
+// SUN3_BOOTROM_SELECTED: the build copied the PROM it wants to a fixed name in
+// its own output directory (syn/build.tcl), because Vivado's -verilog_define
+// does not carry a quoted string through intact.  xvlog's -d does, so the
+// simulation flows name the file directly.
+`ifdef SUN3_BOOTROM_SELECTED
+ `define SUN3_BOOTROM_FILE "bootrom_selected_32bits.vh"
+`endif
 `ifndef SUN3_BOOTROM_FILE
  `define SUN3_BOOTROM_FILE "bootrom_sun3_60_v1.9_fast_32bits.vh"
+`endif
+
+`ifndef SUN3_NO_FB
+ `define SUN3_FB
 `endif
 
 `ifndef SUN3_BYTE_PORTS_8

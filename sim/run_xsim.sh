@@ -13,6 +13,7 @@
 #   SUN3_MEM_MIB      installed memory in MiB (default 4)
 #   SUN3_ETH          none (default) | wish7990
 #   SUN3_MEM_LATENCY  Wishbone wait states (default 0)
+#   SUN3_MEM_FILL     never-written memory reads as this, hex (default 00000000)
 #   SUN3_CPU_HZ       CPU clock (default 20000000)
 #   SUN3_BAUD         console decode rate (default 9600)
 #   SUN3_DEFINES      extra `define's
@@ -45,6 +46,7 @@ romver=${SUN3_ROM_VER:-1.9}
 mem=${SUN3_MEM_MIB:-4}
 eth=${SUN3_ETH:-none}
 lat=${SUN3_MEM_LATENCY:-0}
+fill=${SUN3_MEM_FILL:-00000000}
 hz=${SUN3_CPU_HZ:-20000000}
 baud=${SUN3_BAUD:-9600}
 
@@ -57,6 +59,7 @@ romfile="bootrom_sun3_60_v${romver}_${rom}_32bits.vh"
 # the name.
 tag="$cpu-v$romver-$rom-${mem}m-$eth"
 [ "$lat" != 0 ] && tag="$tag-lat$lat"
+[ "$fill" != 00000000 ] && tag="$tag-fill$fill"
 [ "$hz" != 20000000 ] && tag="$tag-cpu$((hz / 1000000))"
 [ "$baud" != 9600 ] && tag="$tag-baud$baud"
 for d in $SUN3_DEFINES; do tag="$tag-${d//=/_}"; done
@@ -70,7 +73,7 @@ if [ ! -e "$top/build/rom/$romfile" ]; then
 	exit 1
 fi
 
-defargs=(-d SUN3_SIM -d "SUN3_MEM_MIB=$mem" -d "SUN3_BOOTROM_FILE=\"$romfile\"")
+defargs=(-d SUN3_SIM -d "SUN3_CPU_HZ=$hz" -d "SUN3_MEM_MIB=$mem" -d "SUN3_BOOTROM_FILE=\"$romfile\"")
 case "$eth" in
 none) ;;
 wish7990) defargs+=(-d SUN3_ETH_WISH7990) ;;
@@ -80,53 +83,19 @@ for d in $SUN3_DEFINES; do
 	defargs+=(-d "$d")
 done
 
-"$top/tools/patch_inputs.sh" z8530_scc
-"$top/tools/patch_inputs.sh" Suska_Configware
-[ "$eth" = wish7990 ] && "$top/tools/patch_inputs.sh" Wish7990
-
 cd "$rundir"
 echo "== run directory $rundir =="
 
 . "$here/compile_cpu.sh"
+. "$here/compile_sun3.sh"
 compile_cpu
-
-# The Sun-3 gateware is plain Verilog; compiled as such.
-echo "== compiling the Sun-3 gateware (Verilog) =="
-xvlog --work sun3 \
-	"${defargs[@]}" \
-	-i "$top/rtl/sun3" -i "$top/build/rom" \
-	"$top/rtl/sun3/sun3_top.v" \
-	"$top/rtl/sun3/sun3_fpga.v" \
-	"$top/rtl/sun3/sun3_mmu.v" \
-	"$top/rtl/sun3/ctx_reg_sun3.v" \
-	"$top/rtl/sun3/smap.v" \
-	"$top/rtl/sun3/pmap.v" \
-	"$top/rtl/sun3/sram_sync.v" \
-	"$top/rtl/sun3/idprom_sun3.v" \
-	"$top/rtl/sun3/gen8bit_reg.v" \
-	"$top/rtl/sun3/cyctr32bit_reg.v" \
-	"$top/rtl/sun3/bootrom32.v" \
-	"$top/rtl/sun3/icm7170.v" \
-	"$top/rtl/sun3/eeprom.v" \
-	"$top/rtl/sun3/sun3_irq_priority.v" \
-	"$top/rtl/sun3/sun3_wishbone_bridge.v" \
-	"$top/rtl/sun3/wish7990_sun3_regs.v" \
-	"$top/rtl/sun3/wish7990_dvma_to_020.v"
-
-sv_srcs=("$top/build/inputs/z8530_scc/z8530_scc.sv")
-if [ "$eth" = wish7990 ]; then
-	w="$top/build/inputs/Wish7990/src"
-	sv_srcs+=("$w/wish7990_pkg.sv" "$w/crc32_eth.sv" "$w/sync_fifo.sv"
-		"$w/async_fifo.sv" "$w/dp_ram.sv" "$w/mii_rx.sv" "$w/mii_tx.sv"
-		"$w/wb_master.sv" "$w/wb_arb.sv" "$w/le_regs.sv" "$w/le_init.sv"
-		"$w/le_tx.sv" "$w/le_filt.sv" "$w/le_rx.sv" "$w/wish7990.sv")
-fi
+compile_sun3
 
 echo "== compiling the SCCs, Ethernet and testbench (SystemVerilog) =="
 xvlog --sv --work sun3 \
 	"${defargs[@]}" \
 	-i "$top/rtl/sun3" \
-	"${sv_srcs[@]}" \
+	"${sun3_sv[@]}" \
 	"$top/tb/wb_ram_model.sv" \
 	"$top/tb/uart_monitor.sv" \
 	"$top/tb/uart_console.sv" \
@@ -142,6 +111,7 @@ xelab -debug $debug -O3 --timescale 1ns/1ps \
 	-generic_top "CPU_HZ=$hz" \
 	-generic_top "BAUD=$baud" \
 	-generic_top "MEM_LATENCY=$lat" \
+	-generic_top "MEM_FILL=32'h$fill" \
 	sun3.tb_sun3 -s sun3_sim
 
 echo "== running =="

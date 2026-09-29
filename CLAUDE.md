@@ -7,12 +7,19 @@ reused here. Read, never modify, anything in it.
 
 ## Status
 
-Step 1: a core-level simulation (`tb/tb_sun3.sv`) with testbench-supplied
-clocks and a behavioural Wishbone RAM, booting the stock 3/60 PROM (Rev 1.9
-+ noparity). The Suska core reaches the monitor prompt, with and without
-`ETH=wish7990`. `CPU=rd68021` got past the AVEC problem (see Traps)
-and is being checked. No board layer yet (`boards/`, `syn/`,
-MIG, MMCM, XDC come in step 2).
+Step 1 (done): a core-level simulation (`tb/tb_sun3.sv`) with
+testbench-supplied clocks and a behavioural Wishbone RAM, booting the stock
+3/60 PROM (Rev 1.9 + noparity) to the monitor prompt, on both cores (Suska,
+RD68021) and with or without `ETH=wish7990`.
+
+Step 2 (working on hardware): the QMTech Wukong V1 board layer
+(`boards/Wukong/`, `syn/`), adapted from the Sun-2 project: MMCM clocks, the
+Wishbone to MIG DDR3 path, reset held until MIG calibrates, pins. `make -C
+syn bitstream && make -C syn program` puts a Sun-3/60 on the board that
+passes the PROM self test, reports 16MB, and runs the monitor on the UART
+(`/dev/ttyUSB0`, 9600 8N1; `tools/board_console.py`). Not yet: the
+board-level simulation run to completion, the MIG + DDR3 simulation, ETH=1,
+RD68021 on the board.
 
 ## Commands
 
@@ -21,6 +28,11 @@ MIG, MMCM, XDC come in step 2).
 | `make -C tools` | unpack and checksum the PROMs, build the patched variants and the Verilog includes in `build/rom/` |
 | `make -C tools check` | the noparity patch list reproduces the Old RomPatcher image bit for bit |
 | `make -C sim xsim` | compile, elaborate and run `tb_sun3` under xsim; stops on the `>` prompt |
+| `make -C sim board` | the board top (`tb_wukong` + `wukong_top`), behavioural clocks and a Wishbone RAM with `BOARD_LATENCY` (10) wait states; `BOARD_MEM=ddr3` for the real MIG + Micron model instead (calibration and first accesses only: far too slow to boot) |
+| `make -C sim board-check` | as `check`, for the last board run |
+| `make -C syn ip` | generate MIG from `syn/mig/sun3_mig.prj` into `build/ip/<BOARD>/` |
+| `make -C syn bitstream` | Vivado non-project build into `build/syn/vivado/<tag>/`; fails on negative WNS/WHS or a pulse-width violation. Knobs: `BOARD` (v1s1), `CPU`, `ETH` (0), `MEM_MIB` (16), `ROM` (noparity), `CPU_HZ` (20 MHz), `CPU_DIV` |
+| `make -C syn program` / `flash` | JTAG / SPI flash, same knobs (`HW_URL`, default localhost:3121) |
 | `make -C sim check` | grep that run's `console.log` for a good boot (self test, banner, `MEM_MIB` MB installed, prompt). **Does not run anything**: rerun `xsim` first |
 
 `sim/Makefile` knobs: `CPU=suska|rd68021`, `ROM=fast|noparity|pristine`,
@@ -63,6 +75,8 @@ of simulated time per minute at 20 MHz with the Suska core.
 | `rtl/sun3/` | the machine, vendor-neutral: `sun3_top.v` (CPU + system), `sun3_fpga.v` (MMU, control space, OBIO devices, bus glue), `sun3_config.vh` (every build knob) |
 | `tb/` | `tb_sun3.sv`, `wb_ram_model.sv`, `uart_monitor.sv`, `uart_console.sv` (the last three from Sun-2) |
 | `sim/` | `Makefile`, `run_xsim.sh`, `compile_cpu.sh`, `check_console.sh` |
+| `boards/Wukong/` | vendor-specific board layer: `wukong_top.sv`, `wukong_clkgen.sv` (two MMCMs), `wb_to_mig_ui.sv` (Wishbone -> MIG, clock crossing), `mig_arb.sv`, `phy_rtl8211_init.sv` (all from Sun-2) |
+| `syn/` | Vivado flow: `Makefile`, `build.tcl`, `generate_ip.tcl`, `boards.tcl`, `program*.tcl`, `mig/sun3_mig.prj`, XDCs (`wukong_<rev>.xdc`, `wukong_common.xdc`, `wukong_eth.xdc`, `wukong_wbcdc.xdc`) |
 | `tools/` | `rom.c` (binary → Verilog case body), `rompatch.c` (verified word patches + Sun-3 checksum fix-up), patch lists, `patch_inputs.sh` |
 | `patches/<Input>/` | patches against `Inputs/`, applied to copies in `build/inputs/` |
 | `build/` | everything generated; gitignored |
@@ -111,6 +125,51 @@ of simulated time per minute at 20 MHz with the Suska core.
   `patches/Wish7990/` moves declarations ahead of their first use, which
   xvlog insists on and Verilator/Icarus do not. With it built, the boot is
   unchanged; the PROM's boot path (`sd`) does not exercise it.
+
+## The board (QMTech Wukong)
+
+- **Clocks** (`wukong_clkgen`): MMCM A from the 50 MHz oscillator, VCO
+  1000 MHz: 166.67 MHz MIG, CPU_CLK_HZ (20 MHz = VCO/50, exact), 200 MHz
+  IDELAY reference. MMCM B: 4.915170 MHz for the SCCs (9600 baud from the
+  PROM's time constant). `CLKGEN_BEHAVIOURAL` replaces both in fast
+  simulation.
+- **Memory**: `sun3_wishbone_bridge` (CPU clock) -> `wb_to_mig_ui adapter`
+  (toggle handshake into `ui_clk`; keep the instance name, the XDC names it)
+  -> `mig_arb` (one client; the second is for a frame buffer) -> `sun3_mig`
+  (MT41K128M16, 16-bit, DDR3-667, 4:1). About 10 CPU clocks a read.
+- **Reset**: `board_reset | ~mmcm_locked | hold counter | ~init_calib_complete`,
+  released through `reset_sync` into the CPU clock. This is where "memory is
+  ready" lives.
+- **Pins** (V1): console E3/F3 (ttya), diag register on PMOD J10
+  (`diag_leds0`), `todebug` on the second header (`extra_leds0`),
+  `user_led[0]` lit = out of reset, `user_led[1]` lit = DRAM calibrated (or
+  the PHY link, with ETH=1), `user_btn` (H7) = the diag switch, sampled
+  through reset. Keyboard/mouse lines are tied idle. Ethernet (ETH=1):
+  RTL8211EG as 10/100 MII, forced to 10BASE-T over MDIO by
+  `phy_rtl8211_init`.
+- **Defaults**: `BOARD=v1s1`, the V1 built for the -1 grade, as the Sun-2
+  settled on after a -2 build met timing and failed on its board.
+  `CPU_DIV=56`, a 17.857 MHz CPU: the Suska core's bit-field ALU path
+  (`I_ALU/BF_WIDTH -> RESULT`, 80 logic levels, 54.3 ns) fails 20 MHz by
+  4.5 ns on the -1 model. At 17.857 MHz: WNS +0.62 ns, WHS +0.01 ns.
+  `FB=1` (video memory).
+  `ROM=noparity` on hardware (`fast` shortens tests and the keyboard wait,
+  which a real keyboard would need). 16 MiB.
+- **The PROM file reaches Vivado by copy**, not by define: build.tcl copies
+  it to `<outdir>/bootrom_selected_32bits.vh` and defines
+  `SUN3_BOOTROM_SELECTED`. `-verilog_define` mangles a quoted string.
+
+### On the bench
+
+- `make -C syn program` loads the FPGA over JTAG (hw_server on localhost:3121,
+  started from the Vivado install; the cable is a Platform Cable USB II).
+  Nothing goes to the SPI flash unless `make -C syn flash`.
+- `tools/board_console.py` reads and types at the console without pyserial:
+  `-t SECONDS`, `--until STRING`, `--send LINE` (repeatable), `-o LOG`. Only
+  one reader at a time: a second one on the same port sees nothing.
+- Checked on the board: boot to `>`; `h` (help); `l 100000` write/read back
+  in DDR3; a read past 16 MB takes an Invalid Page bus error, as it should.
+  Careful: `q` at the prompt is "open EEPROM", not quit.
 
 ## Boot PROM
 
@@ -172,6 +231,19 @@ settles it in minutes.
 
 ## Traps
 
+- **A 3/60 always has its video memory, and the PROM relies on it.** Built
+  without it (`SUN3_NO_FB`), the monitor's `h` command takes an Invalid Page
+  Bus Error at vaddr 0xFFFED100, PC 0x0FEFC25E: a raster-op loop drawing a
+  form feed into frame buffer memory that was never mapped. It shows only
+  when never-written memory reads 0xFFFFFFFF, as a real machine's does after
+  the PROM's fill (the board; `MEM_FILL=ffffffff` in simulation), not with
+  the model's default 0, which is why the first simulations missed it.
+  `SUN3_FB` (the default) gives the bw2 its memory at the top of DDR3; the
+  console stays on ttya (the EEPROM says so) unless `SUN3_FB_CONSOLE`.
+  With it, the self test's first lines and "EEPROM: Using RS232 A port." go
+  to the (unseen) screen before the monitor switches to ttya, as on a real
+  3/60 with a monitor.
+
 - **AVEC only in interrupt acknowledge.** The old glue tied AVEC low
   permanently. The Suska core ignores AVEC outside IACK, as the MC68020 UM
   says a CPU must ("AVEC is ignored during all other bus cycles"). The
@@ -197,5 +269,11 @@ settles it in minutes.
 - **The legacy RTL is not `default_nettype none` clean** (ports without
   `wire`). Only `sun3_top.v` uses it. An implicit net in `sun3_fpga.v` is a
   silent bug: `MATCH_CYCTR` was one.
+- **The TOD chip must know the CPU clock.** `icm7170` divides CLK itself and
+  defaulted to 19.6608 MHz under a 20 MHz CLK (time 1.7% fast). It now
+  takes `SUN3_CPU_HZ`, which the sim and syn flows set from the same
+  variable as the clock.
+- **Wish7990's MDIO station samples reads a cycle late** (after MDC rises);
+  `patches/Wish7990/0003` carries Wish82586's fix.
 - **VHDL-2008 is required** for the Suska cores (`buffer` formals on `out`
   actuals).

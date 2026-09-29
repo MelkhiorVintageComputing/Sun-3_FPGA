@@ -1,0 +1,423 @@
+`timescale 1ns / 1ps
+
+`include "sun3_config.vh"
+
+//
+// The Sun-3 on a QMTech Wukong (V1; V3 pins in syn/wukong_v3.xdc).
+//
+// Everything vendor- and board-specific lives here and in syn/: the MMCMs,
+// MIG and its DDR3, the pins.  The machine itself is rtl/sun3/sun3_top.v and
+// knows none of it -- it has a Wishbone master for main memory and wants to be
+// held in reset until that memory answers.
+//
+// Adapted from the Sun-2 project's boards/Wukong/wukong_top.sv; the memory path
+// (wb_to_mig_ui -> mig_arb -> MIG), the clocking and the reset chain are the
+// same, and so are the pins.
+//
+//   clk50 --BUFG-- wukong_clkgen --+-- cpu_clk     (CPU_CLK_HZ, 20 MHz)
+//                                  +-- serial_clk  (4.9152 MHz, the SCCs)
+//                                  +-- clk_mig_sys / clk_idelay (MIG)
+//
+//   sun3_top --Wishbone (cpu_clk)-- wb_to_mig_ui adapter --(ui_clk)-- mig_arb -- MIG
+//
+// Options (sun3_config.vh / syn/build.tcl):
+//   SUN3_ETH_WISH7990   the Wish7990 on the board's RTL8211EG, run as MII
+//   BOARD_MEM_FAST      simulation only: no MIG, the Wishbone port and the
+//                       CPU clock and reset come out to the testbench
+//
+
+module wukong_top #(
+    // Every knob is a parameter of this module: synth_design -generic reaches
+    // the top level and nothing below it.
+    parameter int CPU_CLK_HZ = 20_000_000,
+    parameter int CPU_DIV    = 0
+) (
+    input  wire        clk50,
+    input  wire        cpu_reset,      // board button, active low
+
+    output wire        serial_tx,
+    input  wire        serial_rx,
+
+    output wire [1:0]  user_led,       // active low
+    input  wire        user_btn,       // active low: the diag switch
+    output wire [7:0]  diag_leds0,     // PMOD J10: the Sun's diag register
+    output wire [7:0]  extra_leds0,    // second LED header: todebug
+
+`ifdef SUN3_ETH_WISH7990
+    // RTL8211EG, run as 10/100 MII.  rx_dv, rx_er and col are PHY strap pins
+    // and must stay plain inputs.
+    input  wire        phy_mii_tx_clk,
+    output wire [3:0]  phy_mii_txd,
+    output wire        phy_mii_tx_en,
+    output wire        phy_mii_tx_er,
+    input  wire        phy_mii_rx_clk,
+    input  wire [3:0]  phy_mii_rxd,
+    input  wire        phy_mii_rx_dv,
+    input  wire        phy_mii_rx_er,
+    input  wire        phy_mii_crs,
+    input  wire        phy_mii_col,
+    output wire        phy_gtx_clk,
+    output wire        phy_reset_n,
+    output wire        phy_mdc,
+    inout  wire        phy_mdio,
+`endif
+
+`ifdef BOARD_MEM_FAST
+    output wire        wb_cyc_o,
+    output wire        wb_stb_o,
+    output wire [29:0] wb_adr_o,
+    output wire [31:0] wb_dat_o,
+    output wire [3:0]  wb_sel_o,
+    output wire        wb_we_o,
+    input  wire [31:0] wb_dat_i,
+    input  wire        wb_ack_i,
+    output wire        cpu_clk_o,
+    output wire        sys_reset_o
+`else
+    // DDR3: the names MIG generates, pins in its .prj.
+    inout  wire [15:0] ddr3_dq,
+    inout  wire [1:0]  ddr3_dqs_p,
+    inout  wire [1:0]  ddr3_dqs_n,
+    output wire [13:0] ddr3_addr,
+    output wire [2:0]  ddr3_ba,
+    output wire        ddr3_ras_n,
+    output wire        ddr3_cas_n,
+    output wire        ddr3_we_n,
+    output wire        ddr3_reset_n,
+    output wire [0:0]  ddr3_ck_p,
+    output wire [0:0]  ddr3_ck_n,
+    output wire [0:0]  ddr3_cke,
+    output wire [1:0]  ddr3_dm,
+    output wire [0:0]  ddr3_odt
+`endif
+);
+
+   // ------------------------------------------------------------------
+   // Clocks
+   // ------------------------------------------------------------------
+   // An explicit BUFG on the oscillator: the reset assembly (and the PHY reset
+   // counter) are clocked by it directly, and Vivado only sometimes infers the
+   // buffer -- without it the Sun-2 build measured 0.93 ns of skew across one
+   // counter and failed hold.
+   wire clk50_g;
+   BUFG bufg_clk50 (.I(clk50), .O(clk50_g));
+
+   wire board_reset = ~cpu_reset;
+
+   wire clk_mig_sys, clk_idelay, cpu_clk, serial_clk, mmcm_locked;
+
+   wukong_clkgen #(.CPU_CLK_HZ(CPU_CLK_HZ), .CPU_DIV(CPU_DIV)) clkgen (
+       .clk50       (clk50_g),
+       .reset       (board_reset),
+       .clk_mig_sys (clk_mig_sys),
+       .clk_idelay  (clk_idelay),
+       .clk_cpu     (cpu_clk),
+       .clk_serial  (serial_clk),
+       .locked      (mmcm_locked)
+   );
+
+   // ------------------------------------------------------------------
+   // Reset
+   // ------------------------------------------------------------------
+   // The machine stays in reset until the MMCMs are locked, a counter has run
+   // out, and MIG has calibrated: this is where "memory is ready" lives, now
+   // that the Wishbone bridge no longer waits to be switched on.
+   wire init_calib_complete;
+
+   reg [7:0] hold_ctr = 8'hFF;
+   always @(posedge clk50_g) begin
+      if (board_reset || !mmcm_locked) hold_ctr <= 8'hFF;
+      else if (hold_ctr != 8'h00)      hold_ctr <= hold_ctr - 8'd1;
+   end
+
+   wire sys_reset_raw = board_reset | ~mmcm_locked | (hold_ctr != 8'h00)
+                      | ~init_calib_complete;
+
+   // Assembled from three clock domains: released synchronously to the CPU's.
+   wire sys_reset;
+   reset_sync rst_cpu (
+       .clk          (cpu_clk),
+       .rst_async_in (sys_reset_raw),
+       .rst_sync_out (sys_reset)
+   );
+
+   // The diag switch is the user button, sampled while the machine is in
+   // reset and held after: the PROM reads it at power-up and expects it to
+   // stay put (as the old LiteX build did it).  Pressed = diag.
+   reg diag_switch = 1'b0;
+   always @(posedge cpu_clk)
+     if (sys_reset) diag_switch <= ~user_btn;
+
+   // ------------------------------------------------------------------
+   // Ethernet PHY management (RTL8211EG -> 10/100 MII)
+   // ------------------------------------------------------------------
+   wire phy_cfg_done, phy_link;
+
+`ifdef SUN3_ETH_WISH7990
+   // PHY reset: nothing else drives it, so R1 is undefined until the
+   // bitstream runs.  20 ms low, then 50 ms more before MDIO, on clk50.
+   localparam int PHY_RST_CYCLES  = 50_000 * 20;
+   localparam int PHY_WAIT_CYCLES = 50_000 * 50;
+   reg [21:0] phy_rst_ctr  = 22'h0;
+   reg        phy_rst_done = 1'b0;
+   reg        phy_mdio_ok  = 1'b0;
+   always @(posedge clk50_g) begin
+      if (board_reset) begin
+         phy_rst_ctr  <= 22'h0;
+         phy_rst_done <= 1'b0;
+         phy_mdio_ok  <= 1'b0;
+      end else if (phy_rst_ctr != PHY_RST_CYCLES[21:0] + PHY_WAIT_CYCLES[21:0]) begin
+         phy_rst_ctr <= phy_rst_ctr + 22'h1;
+         if (phy_rst_ctr == PHY_RST_CYCLES[21:0]) phy_rst_done <= 1'b1;
+      end else begin
+         phy_mdio_ok <= 1'b1;
+      end
+   end
+   assign phy_reset_n = phy_rst_done;
+
+   // Gigabit only, and the board cannot do it: held low.
+   assign phy_gtx_clk = 1'b0;
+
+   wire        mdio_cyc, mdio_stb, mdio_we, mdio_ack;
+   wire [3:0]  mdio_sel;
+   wire [5:0]  mdio_adr;
+   wire [31:0] mdio_dat_w, mdio_dat_r;
+   wire        mdio_o, mdio_oe, mdio_i;
+   wire [15:0] phy_id;
+   wire        phy_present, phy_fd;
+   wire [1:0]  phy_speed;
+
+   // 20 MHz / (2 * (79 + 1)) = 125 kHz MDC: far under the 2.5 MHz allowed.
+   wb_mdio #(.DIV_RESET(79)) mdio_station (
+       .clk        (cpu_clk),
+       .rst        (sys_reset),
+       .wbs_cyc_i  (mdio_cyc),
+       .wbs_stb_i  (mdio_stb),
+       .wbs_we_i   (mdio_we),
+       .wbs_sel_i  (mdio_sel),
+       .wbs_adr_i  (mdio_adr),
+       .wbs_dat_i  (mdio_dat_w),
+       .wbs_dat_o  (mdio_dat_r),
+       .wbs_ack_o  (mdio_ack),
+       .wbs_err_o  (),
+       .mdc        (phy_mdc),
+       .mdio_o     (mdio_o),
+       .mdio_oe    (mdio_oe),
+       .mdio_i     (mdio_i)
+   );
+
+   IOBUF mdio_pad (.O(mdio_i), .IO(phy_mdio), .I(mdio_o), .T(~mdio_oe));
+
+   // phy_mdio_ok comes from the clk50 domain.
+   (* ASYNC_REG = "TRUE" *) reg phy_ok_s1, phy_ok_s2;
+   always @(posedge cpu_clk) begin
+      phy_ok_s1 <= phy_mdio_ok;
+      phy_ok_s2 <= phy_ok_s1;
+   end
+
+   phy_rtl8211_init #(.PHY_ADDR(5'd1)) phy_init (
+       .clk         (cpu_clk),
+       .rst         (sys_reset),
+       .enable      (phy_ok_s2),
+       .wbm_cyc_o   (mdio_cyc),
+       .wbm_stb_o   (mdio_stb),
+       .wbm_we_o    (mdio_we),
+       .wbm_sel_o   (mdio_sel),
+       .wbm_adr_o   (mdio_adr),
+       .wbm_dat_o   (mdio_dat_w),
+       .wbm_dat_i   (mdio_dat_r),
+       .wbm_ack_i   (mdio_ack),
+       .phy_id      (phy_id),
+       .phy_present (phy_present),
+       .cfg_done    (phy_cfg_done),
+       .link        (phy_link),
+       .speed       (phy_speed),
+       .full_duplex (phy_fd)
+   );
+`else
+   assign phy_cfg_done = 1'b0;
+   assign phy_link     = 1'b0;
+`endif
+
+   // ------------------------------------------------------------------
+   // LEDs (user LEDs active low: lit = 0)
+   // ------------------------------------------------------------------
+   // From sys_reset_raw, not sys_reset: if cpu_clk never runs, the
+   // synchronised copy never releases and the LED would lie in exactly the
+   // case where it is the only instrument.
+   assign user_led[0] = sys_reset_raw;
+   // Lit once DRAM has calibrated; with Ethernet, then the link.
+   assign user_led[1] = phy_cfg_done ? ~phy_link : ~init_calib_complete;
+
+   // ------------------------------------------------------------------
+   // The Sun-3
+   // ------------------------------------------------------------------
+   wire        wb_cyc, wb_stb, wb_we, wb_ack;
+   wire [29:0] wb_adr;
+   wire [31:0] wb_dat_m2s, wb_dat_s2m;
+   wire [3:0]  wb_sel;
+   wire [7:0]  leds, todebug;
+   wire        en_boot;
+
+   assign diag_leds0  = leds;
+   assign extra_leds0 = todebug;
+
+   sun3_top machine (
+       .CLK         (cpu_clk),
+       .clk4m9152   (serial_clk),
+       .clk32k768   (1'b0),          // unused inside (the TOD runs on CLK)
+       .sys_reset   (sys_reset),
+       .tx          (serial_tx),
+       .rx          (serial_rx),
+       .kbd_tx      (),
+       .kbd_rx      (1'b1),          // no keyboard or mouse: idle lines
+       .mou_rx      (1'b1),
+`ifdef SUN3_ETH_WISH7990
+       .phy_txd     (phy_mii_txd),
+       .phy_tx_en   (phy_mii_tx_en),
+       .phy_tx_er   (phy_mii_tx_er),
+       .phy_tx_clk  (phy_mii_tx_clk),
+       .phy_col     (phy_mii_col),
+       .phy_rxd     (phy_mii_rxd),
+       .phy_rx_dv   (phy_mii_rx_dv),
+       .phy_rx_er   (phy_mii_rx_er),
+       .phy_rx_clk  (phy_mii_rx_clk),
+       .phy_crs     (phy_mii_crs),
+       .phy_int_n   (1'b1),
+       .phy_reset_n (),              // the board's own sequencer above owns it
+`endif
+       .V_INT       (1'b0),
+       .leds        (leds),
+       .en_boot     (en_boot),
+       .diag_switch (diag_switch),
+       .todebug     (todebug),
+       .wb_cyc_o    (wb_cyc),
+       .wb_stb_o    (wb_stb),
+       .wb_adr_o    (wb_adr),
+       .wb_dat_o    (wb_dat_m2s),
+       .wb_sel_o    (wb_sel),
+       .wb_we_o     (wb_we),
+       .wb_dat_i    (wb_dat_s2m),
+       .wb_ack_i    (wb_ack)
+   );
+
+   // ------------------------------------------------------------------
+   // Main memory
+   // ------------------------------------------------------------------
+`ifdef BOARD_MEM_FAST
+
+   assign wb_cyc_o    = wb_cyc;
+   assign wb_stb_o    = wb_stb;
+   assign wb_adr_o    = wb_adr;
+   assign wb_dat_o    = wb_dat_m2s;
+   assign wb_sel_o    = wb_sel;
+   assign wb_we_o     = wb_we;
+   assign wb_dat_s2m  = wb_dat_i;
+   assign wb_ack      = wb_ack_i;
+   assign cpu_clk_o   = cpu_clk;
+   assign sys_reset_o = sys_reset;
+   assign init_calib_complete = 1'b1;   // nothing to calibrate
+
+`else
+
+   wire         ui_clk, ui_clk_sync_rst;
+
+   wire [27:0]  app_addr;
+   wire [2:0]   app_cmd;
+   wire         app_en, app_rdy;
+   wire [127:0] app_wdf_data;
+   wire [15:0]  app_wdf_mask;
+   wire         app_wdf_wren, app_wdf_end, app_wdf_rdy;
+   wire [127:0] app_rd_data;
+   wire         app_rd_data_valid, app_rd_data_end;
+
+   wire [27:0]  c0_addr, c1_addr;
+   wire         c0_we, c0_req, c0_done, c1_req, c1_done;
+   wire [127:0] c0_wdata, c0_rdata, c1_rdata;
+   wire [15:0]  c0_wmask;
+
+   // Keep the instance name: syn/wukong_wbcdc.xdc names adapter/* by path.
+   wb_to_mig_ui adapter (
+       .clk_wb   (cpu_clk),
+       .rst_wb   (sys_reset),
+
+       .wb_cyc_i (wb_cyc), .wb_stb_i (wb_stb), .wb_adr_i (wb_adr),
+       .wb_dat_i (wb_dat_m2s), .wb_sel_i (wb_sel), .wb_we_i (wb_we),
+       .wb_dat_o (wb_dat_s2m), .wb_ack_o (wb_ack),
+
+       .ui_clk   (ui_clk), .ui_rst (ui_clk_sync_rst),
+
+       .c_addr (c0_addr), .c_we (c0_we), .c_wdata (c0_wdata), .c_wmask (c0_wmask),
+       .c_req (c0_req), .c_done (c0_done), .c_rdata (c0_rdata)
+   );
+
+   // One client for now; the second port is for a frame buffer's scan-out.
+   assign c1_addr = 28'h0;
+   assign c1_req  = 1'b0;
+
+   mig_arb arbiter (
+       .ui_clk (ui_clk), .ui_rst (ui_clk_sync_rst),
+       .init_calib_complete (init_calib_complete),
+
+       .c0_addr (c0_addr), .c0_we (c0_we), .c0_wdata (c0_wdata), .c0_wmask (c0_wmask),
+       .c0_req (c0_req), .c0_done (c0_done), .c0_rdata (c0_rdata),
+
+       .c1_addr (c1_addr), .c1_req (c1_req), .c1_done (c1_done), .c1_rdata (c1_rdata),
+
+       .app_addr (app_addr), .app_cmd (app_cmd), .app_en (app_en), .app_rdy (app_rdy),
+       .app_wdf_data (app_wdf_data), .app_wdf_mask (app_wdf_mask),
+       .app_wdf_wren (app_wdf_wren), .app_wdf_end (app_wdf_end),
+       .app_wdf_rdy (app_wdf_rdy),
+       .app_rd_data (app_rd_data), .app_rd_data_valid (app_rd_data_valid)
+   );
+
+   // MIG's sys_rst is active low (SysResetPolarity in the .prj).
+   sun3_mig ddr3 (
+       .ddr3_dq       (ddr3_dq),
+       .ddr3_dqs_p    (ddr3_dqs_p),
+       .ddr3_dqs_n    (ddr3_dqs_n),
+       .ddr3_addr     (ddr3_addr),
+       .ddr3_ba       (ddr3_ba),
+       .ddr3_ras_n    (ddr3_ras_n),
+       .ddr3_cas_n    (ddr3_cas_n),
+       .ddr3_we_n     (ddr3_we_n),
+       .ddr3_reset_n  (ddr3_reset_n),
+       .ddr3_ck_p     (ddr3_ck_p),
+       .ddr3_ck_n     (ddr3_ck_n),
+       .ddr3_cke      (ddr3_cke),
+       .ddr3_dm       (ddr3_dm),
+       .ddr3_odt      (ddr3_odt),
+
+       .sys_clk_i     (clk_mig_sys),
+       .clk_ref_i     (clk_idelay),
+       .sys_rst       (~board_reset),
+
+       .app_addr      (app_addr),
+       .app_cmd       (app_cmd),
+       .app_en        (app_en),
+       .app_rdy       (app_rdy),
+       .app_wdf_data  (app_wdf_data),
+       .app_wdf_end   (app_wdf_end),
+       .app_wdf_mask  (app_wdf_mask),
+       .app_wdf_wren  (app_wdf_wren),
+       .app_wdf_rdy   (app_wdf_rdy),
+       .app_rd_data       (app_rd_data),
+       .app_rd_data_end   (app_rd_data_end),
+       .app_rd_data_valid (app_rd_data_valid),
+
+       .app_sr_req    (1'b0),
+       .app_ref_req   (1'b0),
+       .app_zq_req    (1'b0),
+       .app_sr_active (),
+       .app_ref_ack   (),
+       .app_zq_ack    (),
+
+       .ui_clk              (ui_clk),
+       .ui_clk_sync_rst     (ui_clk_sync_rst),
+       .init_calib_complete (init_calib_complete),
+       .device_temp         ()
+   );
+
+`endif
+
+endmodule

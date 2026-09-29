@@ -1,0 +1,44 @@
+wb_mdio: take a read bit before MDC's rising edge, not after it
+
+A PHY drives its answer between 0 and 300 ns after MDC rises and holds it
+until the next rising edge, so the bit to take is the one on the wire
+through the low period before the edge.  Sampling a system clock after
+the edge only worked against a model that changed its output at the same
+moment.
+
+The same fix as in Wish82586's copy of this station (identical otherwise),
+where NetBSD's reads came back shifted by one bit.
+
+Against Wish7990 5ec03d4.  To drop once fixed upstream.
+
+--- a/src/wb_mdio.sv	2026-09-28 23:15:27.936058234 +0200
++++ b/src/wb_mdio.sv	2026-09-28 23:15:27.940058338 +0200
+@@ -145,6 +145,18 @@
+   wire falling = tick && !mdc;   // mdc has just gone low
+   wire rising  = tick && mdc;    // mdc has just gone high
+ 
++  // The last system clock before MDC goes low to high, which is where a read
++  // has to take its bit.  A PHY drives its answer between 0 and 300 ns after a
++  // rising edge and holds it until the next one, so the bit an edge clocks in
++  // is the one that has been sitting on the wire through the low period before
++  // it - not whatever is there a cycle after the edge, which at 50 MHz is 20 ns
++  // into the window where the PHY is entitled to be changing it.
++  //
++  // Sampling after the edge worked against a model that changed its output at
++  // the same moment, and against nothing else; NetBSD's station reads a bit
++  // time earlier than that and got every value shifted by one.
++  wire sample  = (div_cnt == divisor) && !mdc;
++
+   // ---- the frame ----------------------------------------------------------
+   // Bit 63 goes out first: 32 ones, 01, the opcode, addresses, turnaround,
+   // then the data.
+@@ -199,8 +211,8 @@
+           mdio_oe <= !(is_read && (in_ta || in_data));
+           shifter <= {shifter[62:0], 1'b0};
+         end
++        if (sample && is_read && in_data) rdata <= {rdata[14:0], mdio_i};
+         if (rising) begin
+-          if (is_read && in_data) rdata <= {rdata[14:0], mdio_i};
+           if (bits_left == 7'd1) begin
+             active  <= 1'b0;
+             mdio_oe <= 1'b0;

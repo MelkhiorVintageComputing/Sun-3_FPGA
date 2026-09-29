@@ -27,7 +27,7 @@ module eeprom(input CLK,
 		11'h018: sram[a] <= 8'h12; // boot from eeprom-specified device 
 		11'h019: sram[a] <= 8'h73; // boot device (2 bytes)
 		11'h01a: sram[a] <= 8'h64;
-`ifdef SUN3_FB
+`ifdef SUN3_FB_CONSOLE
 		11'h01f: sram[a] <= 8'h00; // primary terminal (0x00: frame buffer and keyboard)
 `else
 		11'h01f: sram[a] <= 8'h10; // primary terminal (0x10: serial A)
