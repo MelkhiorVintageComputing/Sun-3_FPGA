@@ -12,14 +12,14 @@ testbench-supplied clocks and a behavioural Wishbone RAM, booting the stock
 3/60 PROM (Rev 1.9 + noparity) to the monitor prompt, on both cores (Suska,
 RD68021) and with or without `ETH=wish7990`.
 
-Step 2 (working on hardware): the QMTech Wukong V1 board layer
-(`boards/Wukong/`, `syn/`), adapted from the Sun-2 project: MMCM clocks, the
-Wishbone to MIG DDR3 path, reset held until MIG calibrates, pins. `make -C
-syn bitstream && make -C syn program` puts a Sun-3/60 on the board that
-passes the PROM self test, reports 16MB, and runs the monitor on the UART
-(`/dev/ttyUSB0`, 9600 8N1; `tools/board_console.py`). Not yet: the
-board-level simulation run to completion, the MIG + DDR3 simulation, ETH=1,
-RD68021 on the board.
+Step 2 (done): the QMTech Wukong V1 board layer (`boards/Wukong/`, `syn/`),
+adapted from the Sun-2 project: MMCM clocks, the Wishbone to MIG DDR3 path,
+reset held until MIG calibrates, pins. On the board both cores boot the stock
+PROM to the monitor (UART `/dev/ttyUSB0`, 9600 8N1): Suska at 17.857 MHz,
+RD68021 at 20 MHz, 16 MiB of DDR3. In simulation: the board top boots to `>`
+(`make -C sim board`, 2045.6 ms with 10 wait states), and MIG calibrates at
+125.3 us with Micron's model (`BOARD_MEM=ddr3`). Not yet: ETH=1, SCSI, a
+screen.
 
 ## Commands
 
@@ -152,7 +152,8 @@ of simulated time per minute at 20 MHz with the Suska core.
   `CPU_DIV=56`, a 17.857 MHz CPU: the Suska core's bit-field ALU path
   (`I_ALU/BF_WIDTH -> RESULT`, 80 logic levels, 54.3 ns) fails 20 MHz by
   4.5 ns on the -1 model. At 17.857 MHz: WNS +0.62 ns, WHS +0.01 ns.
-  `FB=1` (video memory).
+  `FB=1` (video memory). The RD68021 makes 20 MHz on -1 with room
+  (`CPU=rd68021 CPU_DIV=`: WNS +1.28 ns, WHS +0.01 ns) and boots the same.
   `ROM=noparity` on hardware (`fast` shortens tests and the keyboard wait,
   which a real keyboard would need). 16 MiB.
 - **The PROM file reaches Vivado by copy**, not by define: build.tcl copies
