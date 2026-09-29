@@ -4,13 +4,19 @@
 // control space next to the fault log.
 //
 // Every bus cycle (CPU or DVMA) is recorded when it ends, into a ring of 512
-// entries.  The ring freezes when TRIGGER fires -- by default a user program
-// fetch (FC 2) from the first 8 KiB, which is where a process that returned
-// through a smashed stack ends up -- so the cycles leading to it survive.
+// entries.  Two triggers freeze it:
+//   - always: a user program fetch (FC 2) from the first 8 KiB, which is
+//     where a process that returned through a smashed stack ends up; the
+//     ring freezes on that cycle, so the 511 before it survive;
+//   - when armed with an address: a bus error anywhere in the 256 bytes at
+//     that address; the ring then records 256 more cycles and freezes, so
+//     it holds the fault, the exception frame the CPU pushed and the start
+//     of the handler, with the 255 cycles before it.
 //
 //   control space (FC 3):
-//     0xD0001000  status, read: { frozen, 15'h0, 7'h0, next index [8:0] }
-//                 any write re-arms (unfreezes) it
+//     0xD0001000  status, read: { frozen, 22'h0, next index [8:0] }
+//                 a write re-arms (unfreezes) it and sets the address
+//                 trigger to the data written (0: none)
 //     0xD0002000 + 16*n, n = 0..511, entry n:
 //       +0  address
 //       +4  data (as read by the master, or as written)
@@ -35,6 +41,7 @@ module bus_trace (input             CLK,
                   input [31:0]      CYCLES,
                   // control
                   input             REARM,     // a write to the status register
+                  input [31:0]      REARM_DATA,
                   // the read port
                   input [12:2]      RD_ADR,
                   input             RD_STATUS,
@@ -53,7 +60,12 @@ module bus_trace (input             CLK,
 
    (* ram_style = "block" *) reg [127:0] ring [0:511];
 
+   reg [31:0] trig_adr;
+   reg        post;                         // counting down after the address trigger
+   reg [7:0]  post_cnt;
+
    wire       trigger = (c_fc == 3'd2) && (c_adr[31:13] == 19'h0);
+   wire       trig_hit = (trig_adr != 32'h0) && c_berr && (c_adr[31:8] == trig_adr[31:8]);
    wire       cycle_end = ~as_q & AS_n;     // AS just went away
 
    // Read data: the responders' registered output changes a clock after
@@ -81,15 +93,29 @@ module bus_trace (input             CLK,
       end
 
       if (~RESET_n) begin
-         wptr   <= 9'h0;
-         frozen <= 1'b0;
+         wptr     <= 9'h0;
+         frozen   <= 1'b0;
+         trig_adr <= 32'h0;
+         post     <= 1'b0;
+         post_cnt <= 8'h0;
       end else begin
-         if (REARM) frozen <= 1'b0;
+         if (REARM) begin
+            frozen   <= 1'b0;
+            trig_adr <= REARM_DATA;
+            post     <= 1'b0;
+         end
          if (cycle_end && !frozen) begin
             ring[wptr] <= {c_adr, (c_wr ? c_wdata : c_rdata),
                            c_fc, c_wr, c_siz, c_dvma, c_berr, 24'h0, CYCLES};
             wptr <= wptr + 9'h1;
             if (trigger) frozen <= 1'b1;
+            if (post) begin
+               post_cnt <= post_cnt - 8'h1;
+               if (post_cnt == 8'h0) frozen <= 1'b1;
+            end else if (trig_hit) begin
+               post     <= 1'b1;
+               post_cnt <= 8'hFF;
+            end
          end
       end
    end

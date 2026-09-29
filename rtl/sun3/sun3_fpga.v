@@ -503,6 +503,7 @@ module sun3_fpga(/* clock, reset */
 		      .DVMA(ethernet_dma_active),
 		      .CYCLES(cyctr_out),
 		      .REARM(WR & MATCH_FLTLOG & C_S4 & (SUN3_ADR_IN[13:12] == 2'b01)),
+		      .REARM_DATA(SUN3_DATA_IN),
 		      .RD_ADR(SUN3_ADR_IN[12:2]),
 		      .RD_STATUS(SUN3_ADR_IN[13:12] == 2'b01),
 		      .RD_DATA(bustrace_out));

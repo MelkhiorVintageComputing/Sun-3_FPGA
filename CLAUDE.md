@@ -191,7 +191,10 @@ then `l`/`v`, then `s 5`):
   FC/WR/SIZ/DVMA, bus error register bits, PTE, cycle counter), count at
   0xD0000200. `tools/read_fault_log.sh` breaks in and dumps it.
 - `bus_trace.v` at 0xD0001000 (status; a write re-arms) and 0xD0002000
-  (512 entries): every bus cycle, frozen on a user fetch from page 0.
+  (512 entries): every bus cycle, frozen on a user fetch from page 0, or,
+  once armed with an address (write it to 0xD0001000 at the prompt:
+  `s 3`, `l d0001000`, the address, `s 5`), 256 cycles after a bus error
+  in that 256-byte block -- the fault, the frame pushed and the handler.
   `tools/read_bus_trace.sh` dumps it and `tools/decode_bus_trace.py`
   decodes it (`--syms` takes an `nm`-format kernel symbol list, e.g.
   NetBSD's `netbsd-RAMDISK.symbols.gz`).
