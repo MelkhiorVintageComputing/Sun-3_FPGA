@@ -26,10 +26,13 @@ board net-boots: RARP, the PROM's TFTP load of NetBSD/sun3's netboot, then
 netboot loads NetBSD 10.1's RAMDISK kernel over NFS. The kernel boots on
 both cores ("Model: sun3 60", 16 MB, `le0` on the Wish7990, zs, clock,
 memerr, intreg), mounts its RAM disk and starts `init`:
-- RD68021: user processes run, then one resumes at address 0 after an
+- RD68021: user processes ran, then one resumed at address 0 after an
   instruction-fetch page fault (RTE of a format $B frame with RB/RC set) --
   a core problem, reported upstream
-  (`RD68021-RTE-format-B-rerun-resumes-at-zero.md`, not committed).
+  (`RD68021-RTE-format-B-rerun-resumes-at-zero.md`, not committed) and
+  fixed in 33d9289. `tools/beprobe/rteprobe.S` reproduces it in
+  simulation: 8707c04 ends at PC 0, 33d9289 passes. Not yet rechecked on
+  the board.
 - Suska: `panic: copyout 14` at the first copyout to `init`'s stack. The
   glue presents the fault right; the core pushed a special status word
   describing the next prefetch (SSW 0x0046: DF clear, read, FC 6), so
@@ -211,6 +214,10 @@ then `l`/`v`, then `s 5`):
   In simulation: `make -C sim xsim XSIMARGS="-testplusarg
   load=$PWD/build/beprobe/beprobe.bin@4000 -testplusarg type=g_4000"`.
   RD68021 gives what a 68030 would (SSW 0111, 0141, 0125).
+  `rteprobe.bin`, the same way: a user `bsr.l` into an invalid page whose
+  first instruction is `rts`, the handler validating it and setting FB/FC
+  as NetBSD does, then RTE; prints `rteprobe PASS` when the `rts` comes
+  back.
 - `tools/board_console.py --break` sends a BREAK (faked at 300 baud: the
   CP210x refuses `tcsendbreak`), which drops a Sun kernel into the PROM
   monitor. Not every BREAK lands; retry until "Abort at".
