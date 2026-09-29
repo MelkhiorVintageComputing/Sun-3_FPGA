@@ -131,6 +131,8 @@ read_verilog [list \
     $top/rtl/sun3/eeprom.v \
     $top/rtl/sun3/sun3_irq_priority.v \
     $top/rtl/sun3/sun3_wishbone_bridge.v \
+    $top/rtl/sun3/fault_log.v \
+    $top/rtl/sun3/bus_trace.v \
     $top/rtl/sun3/wish7990_sun3_regs.v \
     $top/rtl/sun3/wish7990_dvma_to_020.v ]
 

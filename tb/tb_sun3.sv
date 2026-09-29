@@ -11,7 +11,11 @@
 //   +timeout_ms=<real>   give up after this much simulated time (default 2000)
 //   +stop_on=<string>    finish as soon as this appears on the console
 //   +diag                set the diag switch: the self test prints as it goes
-//   +type=<line>         at the prompt, type <line> and stop at the next prompt
+//   +type=<line>         at the prompt, type <line> (`_' for a space) and stop at the next prompt
+//   +keep_running        ... or keep running to the timeout after typing it
+//   +load=<file>@<addr>  at the prompt, load a raw binary into memory (hex byte address)
+//   +berr_log            every bus error to berr.txt
+//   +pc_sample_ms=<t>    the last program fetch every <t> ms, to pcsample.txt
 //   +stall_ms=<t>        end the run after this long with no bus cycle (default 100)
 //   +trace_from_ms=<t>   log every bus cycle from then on to trace.txt
 //   +trace_until_ms=<t>  ... and stop logging at <t>
@@ -147,6 +151,43 @@ module tb_sun3 #(
    uart_console #(.BAUD(BAUD)) console_in (.tx(rx));
 
    // ---- run control -------------------------------------------------------
+   // +berr_log: every bus error, one line each, to berr.txt -- page faults,
+   // protection faults and timeouts, with what the MMU made of the address.
+   // +pc_sample_ms=<t>: every <t> ms, the FC and address of the last program
+   // fetch, to pcsample.txt -- where the CPU spends its time, and whether in
+   // user (FC 2) or supervisor (FC 6) mode.
+   int   berrfd = 0, pcfd = 0;
+   real  pc_sample_ms = 0.0;
+   logic [31:0] last_fetch = '0;
+   logic [2:0]  last_fetch_fc = '0;
+   initial begin
+      if ($test$plusargs("berr_log")) berrfd = $fopen("berr.txt", "w");
+      if ($value$plusargs("pc_sample_ms=%f", pc_sample_ms)) begin
+         pcfd = $fopen("pcsample.txt", "w");
+         forever begin
+            #(pc_sample_ms * 1.0e6);
+            $fwrite(pcfd, "%0.3f fc%0d %08x\n", $realtime / 1.0e6, last_fetch_fc, last_fetch);
+            $fflush(pcfd);
+         end
+      end
+   end
+   always @(negedge CLK)
+     if (!dut.sun3.SUN3_AS_n && (dut.sun3.SUN3_FC == 3'd2 || dut.sun3.SUN3_FC == 3'd6)) begin
+        last_fetch    <= dut.sun3.SUN3_ADR_IN;
+        last_fetch_fc <= dut.sun3.SUN3_FC;
+     end
+   logic berr_q = 1'b1;
+   always @(posedge CLK) begin
+      berr_q <= dut.sun3.P_BERR_n;
+      if (berrfd != 0 && berr_q && !dut.sun3.P_BERR_n) begin
+         $fwrite(berrfd, "%0.3f us fc%0d %s %08x pa=%08x siz%0d berrreg_in=%02x pte=%02x_%05x\n",
+                 $realtime / 1.0e3, dut.sun3.SUN3_FC, dut.sun3.SUN3_RW_n ? "R" : "W",
+                 dut.sun3.SUN3_ADR_IN, {dut.sun3.ma_pmap2devices, dut.sun3.SUN3_ADR_IN[12:0]},
+                 dut.sun3.SUN3_SIZ, dut.sun3.berr_in, dut.sun3.ps_pmap2devices, dut.sun3.ma_pmap2devices);
+         $fflush(berrfd);
+      end
+   end
+
    // Bus watch: +watch_from_us=<t> +watch_until_us=<t> prints the bus and the
    // decode's timing signals on every clock edge in that window -- for a
    // CPU whose strobes do not line up with sun3_fpga's C_Sn windows.
@@ -270,11 +311,35 @@ module tb_sun3 #(
    // Let the line finish printing before stopping -- or, with +type=<line>,
    // type that line at the prompt first and stop at the next one.
    string type_line = "";
-   initial void'($value$plusargs("type=%s", type_line));
+   // A plusarg cannot carry a space: `_' in +type stands for one (+type=g_4000).
+   initial begin
+      void'($value$plusargs("type=%s", type_line));
+      for (int i = 0; i < type_line.len(); i++)
+        if (type_line[i] == "_") type_line[i] = " ";
+   end
+
+   // +load=<file>@<hex byte address>: put a binary in memory once the PROM is
+   // at its prompt (after its RAM fill), e.g. a kernel for `g 4000'.
+   // +keep_running: after typing +type, run on to the timeout rather than
+   // stopping at the next prompt (a program that never returns to one).
+   string load_arg = "";
+   initial void'($value$plusargs("load=%s", load_arg));
 
    always @(posedge console_mon.stop_seen) begin
       #1000000;
-      if (type_line.len() > 0) begin
+      if (load_arg.len() > 0) begin
+         int at;
+         int unsigned base;
+         at = -1;
+         for (int i = 0; i < load_arg.len(); i++) if (load_arg[i] == "@") at = i;
+         if (at < 0) begin $display("+load wants <file>@<hexaddr>"); $finish; end
+         base = load_arg.substr(at + 1, load_arg.len() - 1).atohex();
+         mem.load_bin(load_arg.substr(0, at - 1), base);
+      end
+      if (type_line.len() > 0 && $test$plusargs("keep_running")) begin
+         $display("\n[%0.3f ms] typing \"%s\" and running on", $realtime / 1.0e6, type_line);
+         console_in.send_line(type_line);
+      end else if (type_line.len() > 0) begin
          bit ok;
          $display("\n[%0.3f ms] typing \"%s\"", $realtime / 1.0e6, type_line);
          console_in.send_line(type_line);

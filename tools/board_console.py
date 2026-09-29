@@ -2,7 +2,7 @@
 """Talk to the board's serial console (ttya) without pyserial.
 
     tools/board_console.py [-d /dev/ttyUSB0] [-b 9600] [-t SECONDS]
-                           [--until STRING] [--send LINE ...] [-o LOG]
+                           [--until STRING] [--send LINE ...] [--break] [-o LOG]
 
 Opens the port raw at BAUD 8N1, prints (and optionally logs) everything the
 machine says for SECONDS, or until STRING has been seen.  Each --send LINE is
@@ -36,6 +36,26 @@ def open_port(dev, baud):
     return fd
 
 
+def send_break(fd, baud):
+    # tcsendbreak() is refused by some USB serial drivers (the CP210x on the
+    # Wukong says EPIPE), so fake it: a 0x00 at 300 baud holds the line low
+    # for 30 ms, far longer than any 9600 baud frame -- which the SCC reports
+    # as a break.
+    try:
+        termios.tcsendbreak(fd, 0)
+        return
+    except termios.error:
+        pass
+    attrs = termios.tcgetattr(fd)
+    attrs[4] = attrs[5] = termios.B300
+    termios.tcsetattr(fd, termios.TCSADRAIN, attrs)
+    os.write(fd, b"\0")
+    termios.tcdrain(fd)
+    time.sleep(0.05)
+    attrs[4] = attrs[5] = BAUDS[baud]
+    termios.tcsetattr(fd, termios.TCSADRAIN, attrs)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("-d", "--device", default="/dev/ttyUSB0")
@@ -45,10 +65,14 @@ def main():
     ap.add_argument("--send", action="append", default=[], help="a line to type (repeatable)")
     ap.add_argument("--quiet-gap", type=float, default=1.0,
                     help="seconds of silence before typing the next --send line")
+    ap.add_argument("--break", dest="brk", action="store_true",
+                    help="send a BREAK first (a Sun kernel drops to the PROM monitor)")
     ap.add_argument("-o", "--log", help="also append everything received to this file")
     a = ap.parse_args()
 
     fd = open_port(a.device, a.baud)
+    if a.brk:
+        send_break(fd, a.baud)
     log = open(a.log, "ab") if a.log else None
     seen = b""
     deadline = time.monotonic() + a.time

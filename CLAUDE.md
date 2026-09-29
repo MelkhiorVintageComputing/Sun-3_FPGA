@@ -21,6 +21,21 @@ RD68021 at 20 MHz, 16 MiB of DDR3. In simulation: the board top boots to `>`
 125.3 us with Micron's model (`BOARD_MEM=ddr3`). Not yet: ETH=1, SCSI, a
 screen.
 
+Step 3 (in progress): Ethernet and an operating system. With `ETH=1` the
+board net-boots: RARP, the PROM's TFTP load of NetBSD/sun3's netboot, then
+netboot loads NetBSD 10.1's RAMDISK kernel over NFS. The kernel boots on
+both cores ("Model: sun3 60", 16 MB, `le0` on the Wish7990, zs, clock,
+memerr, intreg), mounts its RAM disk and starts `init`:
+- RD68021: user processes run, then one resumes at address 0 after an
+  instruction-fetch page fault (RTE of a format $B frame with RB/RC set) --
+  a core problem, reported upstream
+  (`RD68021-RTE-format-B-rerun-resumes-at-zero.md`, not committed).
+- Suska: `panic: copyout 14` at the first copyout to `init`'s stack. Not yet
+  analysed.
+- In simulation (zero-latency memory) the RD68021 gets further and a
+  process is killed for want of an FPU: a 3/60 has an MC68881, and
+  NetBSD's userland uses it. Still to do.
+
 ## Commands
 
 | command | what |
@@ -56,6 +71,14 @@ Bring-up aids in `tb_sun3`:
 - A run with no bus cycle for `+stall_ms` (default 100) ends with the bus
   state. It is not 1 ms, because the RD68021's instruction cache runs tight
   loops with no bus cycles at all.
+- `+load=<file>@<hexaddr>` loads a binary into memory once the PROM is at
+  its prompt, `+type=g_4000` (`_` for a space) types a line there, and
+  `+keep_running` runs on to the timeout: that is how a NetBSD kernel
+  (`objcopy -O binary` of the ELF, at 0x4000) is simulated from the monitor.
+- `+berr_log` writes every bus error to `berr.txt` (FC, address, bus error
+  register bits, PTE); `+pc_sample_ms=<t>` the last program fetch every
+  <t> ms to `pcsample.txt`. `MEM_FILL=ffffffff` makes never-written memory
+  read as the PROM's fill leaves it on a real machine.
 - LED (diag register) changes are printed with a timestamp; a CPU that
   makes no bus cycle for 1 ms ends the run with its bus state.
 
@@ -161,6 +184,22 @@ of simulated time per minute at 20 MHz with the Suska core.
   `SUN3_BOOTROM_SELECTED`. `-verilog_define` mangles a quoted string.
 
 ### On the bench
+
+**Debug aids in the FPGA** (control space, FC 3; from the monitor: `s 3`,
+then `l`/`v`, then `s 5`):
+- `fault_log.v` at 0xD0000000: the last 32 bus errors (address,
+  FC/WR/SIZ/DVMA, bus error register bits, PTE, cycle counter), count at
+  0xD0000200. `tools/read_fault_log.sh` breaks in and dumps it.
+- `bus_trace.v` at 0xD0001000 (status; a write re-arms) and 0xD0002000
+  (512 entries): every bus cycle, frozen on a user fetch from page 0.
+  `tools/read_bus_trace.sh` dumps it and `tools/decode_bus_trace.py`
+  decodes it (`--syms` takes an `nm`-format kernel symbol list, e.g.
+  NetBSD's `netbsd-RAMDISK.symbols.gz`).
+- `tools/board_console.py --break` sends a BREAK (faked at 300 baud: the
+  CP210x refuses `tcsendbreak`), which drops a Sun kernel into the PROM
+  monitor. Not every BREAK lands; retry until "Abort at".
+- Careful with `--send` together with `--until`: the lines wait for the
+  `--until` string.
 
 - `make -C syn program` loads the FPGA over JTAG (hw_server on localhost:3121,
   started from the Vivado install; the cable is a Platform Cable USB II).

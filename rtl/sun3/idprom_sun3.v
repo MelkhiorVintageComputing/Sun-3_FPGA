@@ -1,5 +1,7 @@
 `timescale 1ns / 1ps
 
+// The ID PROM: format 1, machine type, Ethernet address, date, serial,
+// checksum.  Change any byte of 0x00-0x0e and the checksum (their XOR) with it.
 module idprom_sun3(input CLK,
 		   input [4:0] 	    idx,
 		   output reg [7:0] dout
@@ -8,7 +10,7 @@ module idprom_sun3(input CLK,
    always @(posedge CLK)   
      case (idx)
        5'h00: dout <= 8'h01; // format
-       5'h01: dout <= 8'h11; // machine type (0x11 == carrera, 0x1F == FPGA)
+       5'h01: dout <= 8'h17; // machine type: 0x17 = Sun-3/60 ("Ferrari"); 0x11 is the 3/160 ("Carrera")
        5'h02: dout <= 8'h08; // ethernet address (6 bytes)
        5'h03: dout <= 8'h00;
        5'h04: dout <= 8'h20;
@@ -22,7 +24,7 @@ module idprom_sun3(input CLK,
        5'h0c: dout <= 8'h00; // serial number (3 bytes)
        5'h0d: dout <= 8'h84;
        5'h0e: dout <= 8'ha2;
-       5'h0f: dout <= 8'hcf; // checksum 
+       5'h0f: dout <= 8'hc9; // checksum: XOR of bytes 0x00-0x0e 
        5'h10: dout <= 8'hff; // reserved (16 bytes)
        5'h11: dout <= 8'hff;
        5'h12: dout <= 8'hff;

@@ -283,7 +283,7 @@ module sun3_fpga(/* clock, reset */
    // match wire for the control/mmu space
    // can match early because they only depend on the SUN3_A address
    wire 			 MATCH_CTX, MATCH_SMAP, MATCH_PMAP;
-   wire 			 MATCH_IDPROM, MATCH_SYSEN, MATCH_BERR, MATCH_DIAG, MATCH_UARTBYP, MATCH_CYCTR;
+   wire 			 MATCH_IDPROM, MATCH_SYSEN, MATCH_BERR, MATCH_DIAG, MATCH_UARTBYP, MATCH_CYCTR, MATCH_FLTLOG;
    assign MATCH_IDPROM  = (FC_CTRLLAYER) & (SUN3_ADR_IN[31:28] == 4'h0);
    assign MATCH_PMAP    = (FC_CTRLLAYER) & (SUN3_ADR_IN[31:28] == 4'h1); // Long
    assign MATCH_SMAP    = (FC_CTRLLAYER) & (SUN3_ADR_IN[31:28] == 4'h2);
@@ -297,6 +297,7 @@ module sun3_fpga(/* clock, reset */
    //assign MATCH_COPS    = (FC_CTRLLAYER) & (SUN3_ADR_IN[31:28] == 4'hA); // optional
    //assign MATCH_BOPS    = (FC_CTRLLAYER) & (SUN3_ADR_IN[31:28] == 4'hB); // optional
    assign MATCH_CYCTR   = (FC_CTRLLAYER) & (SUN3_ADR_IN[31:28] == 4'hC); // custom: 32-bits always-on cycle counter
+   assign MATCH_FLTLOG  = (FC_CTRLLAYER) & (SUN3_ADR_IN[31:28] == 4'hD); // custom: the last 32 bus errors (fault_log.v)
    /* 0xC to 0xE: unused */
    assign MATCH_UARTBYP = (FC_CTRLLAYER) & (SUN3_ADR_IN[31:28] == 4'hF);
 
@@ -467,6 +468,45 @@ module sun3_fpga(/* clock, reset */
 		      .dout(cyctr_out),
 		      .CLR_n(~sys_reset)
 		      );
+
+   // The last 32 bus errors, for reading from the PROM monitor (fault_log.v).
+   wire [31:0] 			 fltlog_out;
+   fault_log fltlog(.CLK(CLK),
+		    .RESET_n(~sys_reset),
+		    .FAULT(BERRCLK),
+		    .ADR(SUN3_ADR_IN),
+		    .FC(SUN3_FC),
+		    .RW_n(SUN3_RW_n),
+		    .SIZ(SUN3_SIZ),
+		    .DVMA(ethernet_dma_active),
+		    .BER(berr_in),
+		    .PTE_PS(ps_pmap2devices),
+		    .PTE_MA(ma_pmap2devices),
+		    .CYCLES(cyctr_out),
+		    .RD_ADR(SUN3_ADR_IN[9:2]),
+		    .RD_DATA(fltlog_out));
+
+   // ... and the last 512 bus cycles before a user fetch from page 0 (bus_trace.v):
+   // 0xD0001000 status/re-arm, 0xD0002000+ the ring.
+   wire [31:0] 			 bustrace_out;
+   bus_trace bustrace(.CLK(CLK),
+		      .RESET_n(~sys_reset),
+		      .AS_n(SUN3_AS_n),
+		      .ADR(SUN3_ADR_IN),
+		      .FC(SUN3_FC),
+		      .RW_n(SUN3_RW_n),
+		      .SIZ(SUN3_SIZ),
+		      .WDATA(SUN3_DATA_IN),
+		      .RDATA(P_DATA_OUT),
+		      .DSACK(~P_DSACK_n[0] | ~P_DSACK_n[1]),
+		      .BERR(~P_BERR_n),
+		      .DVMA(ethernet_dma_active),
+		      .CYCLES(cyctr_out),
+		      .REARM(WR & MATCH_FLTLOG & C_S4 & (SUN3_ADR_IN[13:12] == 2'b01)),
+		      .RD_ADR(SUN3_ADR_IN[12:2]),
+		      .RD_STATUS(SUN3_ADR_IN[13:12] == 2'b01),
+		      .RD_DATA(bustrace_out));
+
 
    // PROM (two access modes: at boot using SUN3_A, or mapped but matched through MA), read-only
    // handled by the two match signals in the bus section, the PROM itself always output whatever is addressed
@@ -761,6 +801,7 @@ module sun3_fpga(/* clock, reset */
 		       MATCH_TIMER     ? EXPAND_8BITS(timer_out) :
 		       MATCH_IRQREG    ? EXPAND_8BITS(irqreg_out) :
 		       MATCH_CYCTR     ? cyctr_out :
+		       MATCH_FLTLOG    ? ((SUN3_ADR_IN[13:12] == 2'b00) ? fltlog_out : bustrace_out) :
 `ifdef SUN3_ETH_WISH7990
 		       MATCH_AMDLE     ? ethernet_out :
 `endif
@@ -777,6 +818,7 @@ module sun3_fpga(/* clock, reset */
 		     /* reads */
 		     ( SUN3_RW_n & C_S4 & (MATCH_CTX | MATCH_IDPROM | MATCH_SYSEN | MATCH_BERR |              MATCH_PROM_BOOT | MATCH_MEMERR_CTRL | MATCH_MEMERR_ADDR)) | // entering S4, quick devices (RO or WR)
 		     ( SUN3_RW_n & C_S4 & (MATCH_CYCTR)) | // read-only, 32-bits
+		     (             C_S4 & (MATCH_FLTLOG)) | // reads, and writes ignored
 		     ( SUN3_RW_n & C_S4 & (MATCH_SMAP)) |  // entering S4, quick devices (CTX is 1 clock but went valid after being written, not affected by SUN3_A)
 		     ( SUN3_RW_n & C_S4 & (MATCH_PMAP)) |  // entering S4, physical map needed an extra cycle
 		     ( SUN3_RW_n & C_S6 & (MATCH_EEPROM | MATCH_TIMER | MATCH_IRQREG | MATCH_PROM)) | // entering S6, devices going through the MMU
@@ -902,14 +944,13 @@ module sun3_fpga(/* clock, reset */
    //                           master with BR / BG / BGACK
    //
    // Only MII is wired.  The part does GMII with PHY_DATA_W = 8, but there is
-   // no equivalent of the ETH_RMII path above.
+   // no RMII path.
    //
    // POLL_TICKS is 1.6 ms of CLK, which is what the C-LANCE polls its
-   // descriptor rings at (p. 30).  It has to follow the CPU clock: at the
-   // default 20 MHz that is 32000, and a build with a different CPU clock has
-   // to change it or a driver that waits on the poll rather than writing
-   // CSR0.TDMD waits the wrong length of time.
-   localparam WISH7990_POLL_TICKS = 32000;
+   // descriptor rings at (p. 30): SUN3_CPU_HZ / 625.  It was a literal 32000,
+   // right only at 20 MHz -- off, a driver that waits on the poll rather than
+   // writing CSR0.TDMD waits the wrong length of time.
+   localparam WISH7990_POLL_TICKS = `SUN3_CPU_HZ / 625;
 
    wire 	       wish_cs, wish_adr, wish_we, wish_ready;
    wire [15:0] 	       wish_wdata, wish_rdata;

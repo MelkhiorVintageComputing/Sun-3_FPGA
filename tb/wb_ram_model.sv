@@ -79,6 +79,35 @@ module wb_ram_model #(
       end
    end
 
+   // Load a raw binary file at byte address `base' (word aligned): what a
+   // network boot loader would have put in memory.  Big-endian, as the Sun's
+   // bridge presents the bus: the byte at the lowest address is [31:24].
+   task automatic load_bin(input string path, input int unsigned base);
+      integer fd, n;
+      byte unsigned b [4];
+      int unsigned a, words;
+      begin
+         fd = $fopen(path, "rb");
+         if (fd == 0) begin
+            $display("[wb_ram] cannot open %s", path);
+            $finish;
+         end
+         a = base >> 2;
+         words = 0;
+         forever begin
+            b = '{0, 0, 0, 0};
+            n = $fread(b, fd);
+            if (n <= 0) break;
+            mem[a] = {b[0], b[1], b[2], b[3]};
+            a++;
+            words++;
+            if (n < 4) break;
+         end
+         $fclose(fd);
+         $display("[wb_ram] loaded %s: %0d bytes at %08x", path, words * 4, base);
+      end
+   endtask
+
    // Report how much memory the ROM actually touched -- a quick way to tell
    // "the memory test ran" from "the bus never came up".
    task automatic report();
