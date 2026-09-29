@@ -1,0 +1,78 @@
+68K30L: a special status word that describes the faulted data cycle
+
+The SSW was reloaded at the start of every bus cycle until BUSY_EXH rose.
+The prefetch starts the next opcode cycle before that, so a data fault was
+reported with that fetch's attributes: NetBSD's copyout faulting on an FC 1
+byte write pushed SSW 0x0046 (DF clear, read, FC 6), locore took it for an
+instruction fault, and the kernel panicked with "copyout 14".  The word is
+now held from a data fault until the exception handler takes it.  SIZE also
+used 10/01/00 for long/word/byte; the 68030 encoding is 00/10/01.
+
+Checked with tools/beprobe in simulation (three faults on an invalid page),
+against what an MC68030 -- and RD68021 -- push:
+
+  moves.b %d2,(%a1)+ (FC 1 write)  SSW 0111   was 0046 on the board
+  moves.l (%a1),%d2  (FC 1 read)   SSW 0141
+  move.w  %d2,(%a1)  (FC 5 write)  SSW 0125
+
+Not addressed, and still unlike a 68030: the core's RTE restarts the
+instruction instead of rerunning the faulted cycle; the fault address is the
+effective address after a postincrement (0x400002 for a fault at 0x400001);
+for the plain move.w the frame's PC is the next instruction, SR has its
+flags and the fault address is unrelated (0x4496).  So a fault on (An)+ is
+still not recoverable by a kernel that expects 68030 semantics.
+
+The same bug, fixed the same way, as in the Sun-2 project's patch against
+68K10.  Against Suska_Configware f623ec6.
+
+--- a/68K30L/wf68k30L_bus_interface.vhd
++++ b/68K30L/wf68k30L_bus_interface.vhd
+@@ -269,20 +269,42 @@
+     P_DF: process
+     -- This is the logic which provides the fault flags for data cycles and
+     -- input and output buffer information.
+-    variable SIZEVAR : std_logic_vector(1 downto 0) := "00";
++    --
++    -- SSW bits 8..0 as of the MC68030 user's manual figure 8-8: 8 = DF,
++    -- 7 = RM, 6 = RW (1 = read), 5..4 = SIZE, 3 = 0, 2..0 = FC. SIZE is the
++    -- bus encoding (table 7-2): byte 01, word 10, long 00.
++    --
++    -- FLT_HOLD freezes the word from a data fault until the exception handler
++    -- takes over: the prefetch runs on and starts the next opcode cycle before
++    -- BUSY_EXH is asserted, and that cycle would otherwise overwrite the faulted
++    -- cycle's DF, FC, RW and SIZE with its own (FC 6, read). Only a data fault
++    -- holds: it always ends in a bus error exception, where a faulted prefetch
++    -- may be discarded and would then hold the word forever.
++    variable SIZEVAR  : std_logic_vector(1 downto 0) := "00";
++    variable FLT_HOLD : bit := '0';
+     begin
+         wait until CLK = '1' and CLK' event;
++        if BUSY_EXH = '1' then
++            FLT_HOLD := '0'; -- The exception handler has the word now.
++        end if;
++        --
+         if BUSY_EXH = '0' then -- Do not alter during exception processing.
+             case OP_SIZE is
+-                when LONG => SIZEVAR := "10";
+-                when WORD => SIZEVAR := "01";
+-                when BYTE => SIZEVAR := "00";
++                when LONG => SIZEVAR := "00";
++                when WORD => SIZEVAR := "10";
++                when BYTE => SIZEVAR := "01";
+             end case;
+             --
+-            if BUS_CTRL_STATE = START_CYCLE and NEXT_BUS_CTRL_STATE = DATA_C1C4 then
+-                SSW_80 <= To_StdLogicVector('0' & RMC & not WR_REQ) & SIZEVAR & '0' & FC_IN;
++            -- The cycle serves RD_REQ first, then WR_REQ, then OPCODE_REQ (ACCESSTYPE).
++            if BUS_CTRL_STATE = START_CYCLE and NEXT_BUS_CTRL_STATE = DATA_C1C4 and FLT_HOLD = '0' then
++                if RD_REQ = '1' or WR_REQ = '1' then
++                    SSW_80 <= To_StdLogicVector('0' & RMC & (RD_REQ or not WR_REQ)) & SIZEVAR & '0' & FC_IN;
++                else -- An opcode cycle: a word read.
++                    SSW_80 <= To_StdLogicVector('0' & RMC & '1') & "10" & '0' & FC_IN;
++                end if;
+             elsif BUS_CTRL_STATE = DATA_C1C4 and (READ_ACCESS = '1' or WRITE_ACCESS = '1') and BUS_FLT = '1' then
+                 SSW_80(8) <= '1';
++                FLT_HOLD := '1';
+             end if;
+ 
+             OUTBUFFER <= WP_BUFFER; -- Used for exception stack frame type A and B.

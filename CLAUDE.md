@@ -30,8 +30,14 @@ memerr, intreg), mounts its RAM disk and starts `init`:
   instruction-fetch page fault (RTE of a format $B frame with RB/RC set) --
   a core problem, reported upstream
   (`RD68021-RTE-format-B-rerun-resumes-at-zero.md`, not committed).
-- Suska: `panic: copyout 14` at the first copyout to `init`'s stack. Not yet
-  analysed.
+- Suska: `panic: copyout 14` at the first copyout to `init`'s stack. The
+  glue presents the fault right; the core pushed a special status word
+  describing the next prefetch (SSW 0x0046: DF clear, read, FC 6), so
+  locore took it for an instruction fault. `patches/Suska_Configware/0001`
+  fixes the SSW. What remains is the core's own design: its RTE restarts
+  the instruction rather than rerunning the cycle, and a `(An)+` has
+  already incremented, so a copyin/copyout fault would lose a byte. Not
+  pursued: RD68021 is the core of interest.
 - In simulation (zero-latency memory) the RD68021 gets further and a
   process is killed for want of an FPU: a 3/60 has an MC68881, and
   NetBSD's userland uses it. Still to do.
@@ -198,6 +204,13 @@ then `l`/`v`, then `s 5`):
   `tools/read_bus_trace.sh` dumps it and `tools/decode_bus_trace.py`
   decodes it (`--syms` takes an `nm`-format kernel symbol list, e.g.
   NetBSD's `netbsd-RAMDISK.symbols.gz`).
+- `tools/beprobe/` (`make -C tools/beprobe`, `FAULT_VA=0x01000000` for
+  16 MiB): a program for `g 4000` that takes three bus errors (FC 1 byte
+  write via `moves.b (An)+`, FC 1 long read, FC 5 word write) and prints
+  each frame's SR, PC, format, SSW, fault address, output buffer and a1.
+  In simulation: `make -C sim xsim XSIMARGS="-testplusarg
+  load=$PWD/build/beprobe/beprobe.bin@4000 -testplusarg type=g_4000"`.
+  RD68021 gives what a 68030 would (SSW 0111, 0141, 0125).
 - `tools/board_console.py --break` sends a BREAK (faked at 300 baud: the
   CP210x refuses `tcsendbreak`), which drops a Sun kernel into the PROM
   monitor. Not every BREAK lands; retry until "Abort at".
