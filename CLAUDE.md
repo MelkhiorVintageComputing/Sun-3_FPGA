@@ -31,8 +31,9 @@ memerr, intreg), mounts its RAM disk and starts `init`:
   a core problem, reported upstream
   (`RD68021-RTE-format-B-rerun-resumes-at-zero.md`, not committed) and
   fixed in 33d9289. `tools/beprobe/rteprobe.S` reproduces it in
-  simulation: 8707c04 ends at PC 0, 33d9289 passes. Not yet rechecked on
-  the board.
+  simulation: 8707c04 ends at PC 0, 33d9289 passes. On the board with
+  33d9289, user processes run until `pid 52 killed: no floating point
+  support` at 10.35 s, as in the zero-latency simulation.
 - Suska: `panic: copyout 14` at the first copyout to `init`'s stack. The
   glue presents the fault right; the core pushed a special status word
   describing the next prefetch (SSW 0x0046: DF clear, read, FC 6), so
@@ -41,9 +42,9 @@ memerr, intreg), mounts its RAM disk and starts `init`:
   the instruction rather than rerunning the cycle, and a `(An)+` has
   already incremented, so a copyin/copyout fault would lose a byte. Not
   pursued: RD68021 is the core of interest.
-- In simulation (zero-latency memory) the RD68021 gets further and a
-  process is killed for want of an FPU: a 3/60 has an MC68881, and
-  NetBSD's userland uses it. Still to do.
+- Next blocker, on both simulation and board: the FPU. A 3/60 has an
+  MC68881 ("fpu: no math support" at boot), and NetBSD's userland uses it.
+  Still to do.
 
 ## Commands
 
@@ -177,8 +178,9 @@ of simulated time per minute at 20 MHz with the Suska core.
   `user_led[0]` lit = out of reset, `user_led[1]` lit = DRAM calibrated (or
   the PHY link, with ETH=1), `user_btn` (H7) = the diag switch, sampled
   through reset. Keyboard/mouse lines are tied idle. Ethernet (ETH=1):
-  RTL8211EG as 10/100 MII, forced to 10BASE-T over MDIO by
-  `phy_rtl8211_init`.
+  RTL8211EG as 10/100 MII, limited to 10BASE-T over MDIO by
+  `phy_rtl8211_init` (it autonegotiates, advertising 10 half and full
+  duplex only).
 - **Defaults**: `BOARD=v1s1`, the V1 built for the -1 grade, as the Sun-2
   settled on after a -2 build met timing and failed on its board.
   `CPU_DIV=56`, a 17.857 MHz CPU: the Suska core's bit-field ALU path
