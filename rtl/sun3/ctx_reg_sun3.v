@@ -8,10 +8,12 @@ module ctx_reg_sun3 #(parameter VALID_BITS=3)(input CLK,
 		    );
    reg [7:0] 			 ctx;
    
+`ifdef SUN3_SIM
    initial
      begin
         ctx = $random;
      end
+`endif
    
    always @(posedge CLK)
      begin

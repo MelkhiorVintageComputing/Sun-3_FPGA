@@ -82,7 +82,12 @@ board-check:
 check:
 	./check_console.sh $(RUNDIR)/console.log $(MEM_MIB)
 
+# Board-layer unit tests (sim/run_unit.sh): the DECA's DDR3 adapter and its
+# JTAG console bridge, each against a model of the IP it talks to.
+decaddr3 decaconsole:
+	./run_unit.sh $@
+
 clean:
 	rm -rf $(TOP)/build/sim
 
-.PHONY: xsim check board board-check clean
+.PHONY: xsim check board board-check decaddr3 decaconsole clean

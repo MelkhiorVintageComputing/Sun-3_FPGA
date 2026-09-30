@@ -1,9 +1,9 @@
 # Sun-3 FPGA replica
 
 A Sun-3/60 ("Carrera") rebuilt in an FPGA, targeting the QMTech Wukong V1
-(XC7A100T, 256 MiB DDR3). The sibling project `../Sun-2_FPGA` does the same
-for a Sun-2 on the same board; its structure, scripts and conventions are
-reused here. Read, never modify, anything in it.
+(XC7A100T, 256 MiB DDR3) and the Arrow DECA (MAX 10 10M50, 512 MB DDR3).
+The sibling project `../Sun-2_FPGA` does the same for a Sun-2 on the same
+two boards; its structure, scripts and conventions are reused here. Read, never modify, anything in it.
 
 ## Status
 
@@ -46,6 +46,13 @@ memerr, intreg), mounts its RAM disk and starts `init`:
   MC68881 ("fpu: no math support" at boot), and NetBSD's userland uses it.
   Still to do.
 
+Step 4 (in progress): the Arrow DECA (`boards/DECA/`, `syn/quartus.tcl`),
+ported from the Sun-2 project's DECA layer. RD68021 only (Suska does not
+fit). On the board at 16.667 MHz: DDR3 calibrates, the stock PROM
+(noparity) boots to `>` with "16MB memory installed" on the JTAG console,
+`h`, DDR3 write/read-back and the Invalid Page bus error past 16 MB all as
+on the Wukong. Not yet: `ETH=1` (DP83620), a faster clock.
+
 ## Commands
 
 | command | what |
@@ -59,6 +66,11 @@ memerr, intreg), mounts its RAM disk and starts `init`:
 | `make -C syn bitstream` | Vivado non-project build into `build/syn/vivado/<tag>/`; fails on negative WNS/WHS or a pulse-width violation. Knobs: `BOARD` (v1s1), `CPU`, `ETH` (0), `MEM_MIB` (16), `ROM` (noparity), `CPU_HZ` (20 MHz), `CPU_DIV` |
 | `make -C syn program` / `flash` | JTAG / SPI flash, same knobs (`HW_URL`, default localhost:3121) |
 | `make -C sim check` | grep that run's `console.log` for a good boot (self test, banner, `MEM_MIB` MB installed, prompt). **Does not run anything**: rerun `xsim` first |
+| `make -C syn bitstream BOARD=deca` | the DECA under Quartus (`syn/quartus.tcl`) into `build/syn/quartus/<tag>/sun3.sof`; fails on negative slack (`ALLOW_NEG=1`). Defaults `CPU=rd68021 CPU_DIV=60`; extra knobs `CPU_DUTY`, `BUS_TRACE`, `SEED` |
+| `make -C syn program BOARD=deca` | JTAG through the on-board USB-Blaster II (no flash: the board is JTAG-only) |
+| `make -C syn lint BOARD=deca` | Quartus analysis & synthesis of `sun3_top` alone |
+| `make -C sim board BOARD=deca CPU=rd68021` | `tb_deca` + `deca_top`, behavioural clocks and RAM, the JTAG UART modelled (`jtag.log` must equal `console.log`) |
+| `make -C sim decaddr3` / `decaconsole` | unit tests: the DDR3 adapter against BrianHG's command port, the console bridge against the JTAG UART |
 
 `sim/Makefile` knobs: `CPU=suska|rd68021`, `ROM=fast|noparity|pristine`,
 `ROM_VER=1.9|2.8.3|3.0.1` (patched variants: 1.9 only), `MEM_MIB`,
@@ -108,12 +120,13 @@ of simulated time per minute at 20 MHz with the Suska core.
 | `rtl/sun3/` | the machine, vendor-neutral: `sun3_top.v` (CPU + system), `sun3_fpga.v` (MMU, control space, OBIO devices, bus glue), `sun3_config.vh` (every build knob) |
 | `tb/` | `tb_sun3.sv`, `wb_ram_model.sv`, `uart_monitor.sv`, `uart_console.sv` (the last three from Sun-2) |
 | `sim/` | `Makefile`, `run_xsim.sh`, `compile_cpu.sh`, `check_console.sh` |
+| `boards/DECA/` | the DECA's board layer, from the Sun-2 project: `deca_top.sv`, `deca_clkgen.sv` (two altpll), `deca_wb_to_ddr3.sv` (Wishbone -> BrianHG, clock crossing), `deca_jtag_console.sv` + `deca_uart_{rx,tx}.sv`, `phy_dp83620_init.sv` |
 | `boards/Wukong/` | vendor-specific board layer: `wukong_top.sv`, `wukong_clkgen.sv` (two MMCMs), `wb_to_mig_ui.sv` (Wishbone -> MIG, clock crossing), `mig_arb.sv`, `phy_rtl8211_init.sv` (all from Sun-2) |
 | `syn/` | Vivado flow: `Makefile`, `build.tcl`, `generate_ip.tcl`, `boards.tcl`, `program*.tcl`, `mig/sun3_mig.prj`, XDCs (`wukong_<rev>.xdc`, `wukong_common.xdc`, `wukong_eth.xdc`, `wukong_wbcdc.xdc`) |
 | `tools/` | `rom.c` (binary → Verilog case body), `rompatch.c` (verified word patches + Sun-3 checksum fix-up), patch lists, `patch_inputs.sh` |
 | `patches/<Input>/` | patches against `Inputs/`, applied to copies in `build/inputs/` |
 | `build/` | everything generated; gitignored |
-| `Inputs/` | immutable third-party and reference material. Third-party repositories are git submodules (`git submodule update --init`): Suska_Configware, z8530_scc, RD68021, Wish7990, Wish5380, hdmi, `doc/QM_XC7A100T_WUKONG_BOARD`, `doc/MC68030_Doc_More_Readable`, `ref/qemu-sun3`; loose documents are plain files |
+| `Inputs/` | immutable third-party and reference material. Third-party repositories are git submodules (`git submodule update --init`): Suska_Configware, z8530_scc, RD68021, Wish7990, Wish5380, hdmi, BrianHG-DDR3, `doc/QM_XC7A100T_WUKONG_BOARD`, `doc/DECA_board`, `doc/MC68030_Doc_More_Readable`, `ref/qemu-sun3`; loose documents are plain files |
 | `Old/` | the previous (LiteX) implementation; never in git, never modified |
 
 ## Conventions
@@ -235,6 +248,50 @@ then `l`/`v`, then `s 5`):
 - Checked on the board: boot to `>`; `h` (help); `l 100000` write/read back
   in DDR3; a read past 16 MB takes an Invalid Page bus error, as it should.
   Careful: `q` at the prompt is "open EEPROM", not quit.
+
+## The board (Arrow DECA)
+
+From the Sun-2 project's DECA port, which has the history of every choice.
+
+- **Quartus** 25.1std Lite at `/opt/Altera/quartus` (`QUARTUS_ROOTDIR`),
+  run through `syn/altera.sh`. `INTERNAL_FLASH_UPDATE_MODE "SINGLE COMP
+  IMAGE WITH ERAM"` is mandatory: without it every initialised memory
+  (PROM, EEPROM) is silently built from logic. The Vivado attributes are
+  spelled per tool in `sun3_attr.vh` (`SUN3_QUARTUS`, set by quartus.tcl);
+  `$random` in `initial` blocks is Error 10174 there, so they are all under
+  `SUN3_SIM`.
+- **Clocks** (`deca_clkgen`): altpll A, VCO 1 GHz as the Wukong's, CPU =
+  1000/`CPU_DIV` MHz; altpll B 4.915254 MHz for the SCCs; BrianHG's own PLL
+  for DDR3 (250 MHz; its 400 does not build on Quartus 25.1), CMD_CLK
+  125 MHz.
+- **Memory**: `sun3_wishbone_bridge` -> `deca_wb_to_ddr3` (toggle handshake
+  into CMD_CLK; write mask active high, unlike MIG's) -> BrianHG's soft
+  controller (`Inputs/BrianHG-DDR3`, unpatched), caches off,
+  `PORT_CACHE_SMART` on (`DDR3_SMART`).
+- **Reset**: KEY[0] | PLL unlock | hold counter | ISSP reset, then `| ~DDR3_READY`
+  for the machine only (the controller must not wait for itself).
+- **Console**: no UART reaches the FPGA. ttya is bridged to a JTAG UART on
+  the USB-Blaster II, on the raw 50 MHz (slower than ~5x TCK duplicates or
+  swaps bytes). `tools/deca_console_pty.sh` makes it `/tmp/deca-console`;
+  `SUN3_CONSOLE=/tmp/deca-console` points `tools/board_console.py` (and the
+  scripts using it) there. The raw TX is also on GPIO0_D[0] = PIN_W18
+  (P8 pin 3) for a 3.3 V USB-TTL cable.
+- **ISSP** (`tools/deca_reset.tcl [reset|break]` through `altera.sh
+  quartus_stp`): DDR3 ready/calibration, PHY state, diag, todebug; source 0
+  resets the machine, source 1 holds ttya's RX low (a BREAK: the monitor's
+  abort, which the JTAG UART cannot carry). It and the console share the
+  JTAG chain: stop the console first. Output meanwhile queues (2 KiB).
+- **Pins** (`syn/deca_pins.qsf`, `deca_ddr3_pins.qsf`): LEDs active low,
+  SW[0] down = diag register, up = todebug; SW[1] = the diag switch,
+  sampled through reset. No SD, no HDMI yet.
+- **Fit** (RD68021, 16.667 MHz, no Ethernet): 36,741 LE (74%), 852,640
+  memory bits (51%), 3 of 4 PLLs; WNS +0.445 ns, WHS +0.097 ns; the CPU
+  clock's Fmax is 19.0 MHz at the slow corner. The RD68021's microcode is
+  built from logic (4.7K LE: its `rom_style` attribute is Vivado's) and its
+  instruction cache from flip-flops (2.7K LE, 3.7K registers).
+- Configuring the FPGA tears down the JTAG console: the boot banner goes
+  out before anything reads it. Attach, then `k2` at the monitor (or an
+  ISSP reset with the console stopped) to see a boot.
 
 ## Boot PROM
 

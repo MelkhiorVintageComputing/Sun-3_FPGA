@@ -7,10 +7,14 @@ module gen8bit_reg(input CLK,
 		   input 	    CLR_n
 		   );
    reg [7:0] 			 data;
+`ifdef SUN3_SIM
+   // Power-up garbage, in simulation only: $random is not synthesisable
+   // (Quartus refuses it outright, Error 10174).
    initial
      begin
         data = $random;
      end
+`endif
    
    always @(posedge CLK)
      begin

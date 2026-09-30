@@ -20,6 +20,8 @@
 //                        and syn flows set both from one variable.
 //   SUN3_BOOTROM_FILE    the boot PROM case body, from build/rom/ (or
 //                        SUN3_BOOTROM_SELECTED, see below)
+//   SUN3_NO_BUS_TRACE    leave out bus_trace.v (8 block RAMs of 4 KiB); its
+//                        control space then reads as zeros
 //   DEVICE_8BITS_ON_32BITS_BUS
 //                        byte devices answer as 32-bit ports with the byte
 //                        replicated on all lanes (on unless SUN3_BYTE_PORTS_8)

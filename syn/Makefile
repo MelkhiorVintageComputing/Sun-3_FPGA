@@ -1,4 +1,5 @@
-# FPGA build for the QMTech Wukong (V1 by default).
+# FPGA build for the QMTech Wukong (V1 by default) or, with BOARD=deca, the
+# Arrow DECA (Quartus; see the DECA section at the end).
 #
 #   make ip                  generate the MIG DDR3 controller from mig/sun3_mig.prj
 #   make bitstream           build; writes the .bit and, beside it, the .bin
@@ -19,18 +20,28 @@
 # it is invoked.  Adapted from the Sun-2 project's syn/Makefile.
 
 TOP     = ..
+# pipefail: a Quartus failure must fail the target through the | grep below.
+SHELL  := /bin/bash
+.SHELLFLAGS := -o pipefail -c
 HERE   := $(CURDIR)
 XILINX_VIVADO ?= /opt/Xilinx/2025.2/Vivado
 VIVADO        ?= $(XILINX_VIVADO)/bin/vivado
 
 CPU_HZ  ?= 20000000
+BOARD   ?= v1s1
+ifeq ($(BOARD),deca)
+# The DECA: RD68021 only (Suska does not fit a 10M50), and VCO/60 =
+# 16.667 MHz until a faster clock has been measured on the part.
+CPU_DIV ?= 60
+CPU     ?= rd68021
+else
 # The MMCM's CPU divider named directly (VCO/CPU_DIV), when the frequency is
 # not a whole number of hertz.  Wins over CPU_HZ, here and in build.tcl.
 # Default 56 = 17.857 MHz: the Suska core's bit-field ALU path (54.3 ns) does
 # not make 20 MHz on the -1 timing model.  CPU_DIV= (empty) uses CPU_HZ.
 CPU_DIV ?= 56
-BOARD   ?= v1s1
 CPU     ?= suska
+endif
 ETH     ?= 0
 # The 3/60's on-board video memory (the PROM relies on it; see CLAUDE.md).
 FB      ?= 1
@@ -61,6 +72,8 @@ BIN     = $(BIT:.bit=.bin)
 WORKDIR = $(SYNDIR)/vivado/work-$(BOARD)
 
 all: bitstream
+
+ifneq ($(BOARD),deca)
 
 $(WORKDIR):
 	mkdir -p $(WORKDIR)
@@ -99,10 +112,62 @@ flash: | $(WORKDIR)
 	cd $(WORKDIR) && $(VIVADO) -mode batch -nojournal -nolog \
 		-source $(HERE)/program_flash.tcl -tclargs $(BIN) $(BOARD) $(HW_URL)
 
+endif  # not deca
+
+# ------------------------------------------------------------------ the DECA
+#
+#   make bitstream BOARD=deca [ETH=1] [CPU_DIV=50] [CPU_DUTY=53]
+#   make program BOARD=deca     over the on-board USB-Blaster II (JTAG only)
+#   make lint BOARD=deca        Quartus analysis & synthesis of sun3_top alone
+#
+# Extra knobs: CPU_DUTY (50), BUS_TRACE (1), ALLOW_NEG (0: a .sof is written
+# only if timing is met), SEED, JOBS.  Quartus is QUARTUS_ROOTDIR
+# (/opt/Altera/quartus), through altera.sh.
+ifeq ($(BOARD),deca)
+CPU_DUTY  ?= 50
+BUS_TRACE ?= 1
+ALLOW_NEG ?= 0
+SEED      ?= 0
+JOBS      ?= 8
+QOUTDIR = $(SYNDIR)/quartus/deca-$(CPU)-cpu$(CPU_MHZ_TAG)$(if $(CPU_DIV),-div$(CPU_DIV),)$(if $(filter-out 50,$(CPU_DUTY)),-duty$(CPU_DUTY),)-$(MEM_MIB)m-v$(ROM_VER)-$(ROM)$(if $(filter 1,$(ETH)),-eth,)$(if $(filter 0,$(FB)),-nofb,)$(if $(filter 0,$(BUS_TRACE)),-notrace,)$(if $(filter-out 0,$(SEED)),-seed$(SEED),)
+SOF     = $(abspath $(QOUTDIR))/sun3.sof
+QARGS   = -root $(abspath $(TOP)) -board deca -cpu $(CPU) \
+          -cpu_hz $(CPU_HZ) -cpu_div $(if $(CPU_DIV),$(CPU_DIV),0) -cpu_duty $(CPU_DUTY) \
+          -eth $(ETH) -fb $(FB) -bus_trace $(BUS_TRACE) -mem_mib $(MEM_MIB) \
+          -romfile $(ROMFILE) -allow_neg $(ALLOW_NEG) -jobs $(JOBS) -seed $(SEED)
+
+rom:
+	$(MAKE) -C $(TOP)/tools
+
+inputs:
+	$(TOP)/tools/patch_inputs.sh RD68021
+	$(TOP)/tools/patch_inputs.sh z8530_scc
+	$(TOP)/tools/patch_inputs.sh Wish7990
+
+bitstream: rom inputs
+	mkdir -p $(abspath $(QOUTDIR)); rm -f $(SOF)
+	./altera.sh quartus_sh -t $(HERE)/quartus.tcl $(QARGS) \
+		-topent deca_top -stage asm -outdir $(abspath $(QOUTDIR)) \
+		2>&1 | tee $(abspath $(QOUTDIR)).log | grep '^\(== \|ERROR\|Error\)'; \
+		test -f $(SOF) && echo "bitstream: $(SOF)"
+
+lint: rom inputs
+	mkdir -p $(abspath $(SYNDIR))/quartus/lint
+	./altera.sh quartus_sh -t $(HERE)/quartus.tcl $(QARGS) \
+		-topent sun3_top -stage map -outdir $(abspath $(SYNDIR))/quartus/lint \
+		2>&1 | tee $(abspath $(SYNDIR))/quartus/lint.log | grep '^\(== \|ERROR\|Error\)'
+
+program:
+	./altera.sh quartus_pgm -m JTAG -o "p;$(SOF)"
+
+ip flash:
+	@echo "BOARD=deca: no IP to generate and no flash (the board is JTAG-only)"
+endif
+
 clean:
 	rm -rf $(SYNDIR)
 
 clean-ip:
 	rm -rf $(TOP)/build/ip
 
-.PHONY: all ip rom inputs bitstream program flash clean clean-ip
+.PHONY: all ip rom inputs bitstream program flash lint clean clean-ip

@@ -1,4 +1,4 @@
-# What distinguishes one QMTech Wukong revision from another.
+# What distinguishes one board (a QMTech Wukong revision, or the DECA) from another.
 #
 # Sourced by build.tcl and generate_ip.tcl so the two cannot disagree.
 #
@@ -82,9 +82,35 @@ proc board_flash_part {board} {
     }
 }
 
+# Which toolchain a board belongs to: the Wukong revisions are Xilinx, built
+# by syn/build.tcl under Vivado; the Arrow DECA is Altera, built by
+# syn/quartus.tcl under Quartus.  Everything below the board layer is shared.
+proc board_vendor {board} {
+    switch -- $board {
+        v1 - v1s1 - v3 { return xilinx }
+        deca           { return altera }
+        default        { return "" }
+    }
+}
+
+# Quartus spells a device in two pieces, and both are assignments.
+proc board_family {board} {
+    switch -- $board {
+        deca    { return "MAX 10" }
+        default { return "" }
+    }
+}
+
+proc board_device {board} {
+    switch -- $board {
+        deca    { return 10M50DAF484C6GES }
+        default { return "" }
+    }
+}
+
 proc board_check {board} {
-    if {[board_part $board] eq ""} {
-        puts "ERROR: BOARD must be v1, v1s1 or v3, not '$board'"
+    if {[board_vendor $board] eq ""} {
+        puts "ERROR: BOARD must be v1, v1s1, v3 or deca, not '$board'"
         exit 1
     }
 }

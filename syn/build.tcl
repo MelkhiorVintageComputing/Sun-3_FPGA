@@ -31,6 +31,10 @@ if {$cpu_div != 0} {
 }
 
 board_check $board
+if {[board_vendor $board] ne "xilinx"} {
+    puts "ERROR: BOARD=$board is not a Xilinx board; it is built by syn/quartus.tcl"
+    exit 1
+}
 if {$cpu ne "suska" && $cpu ne "rd68021"} {
     puts "ERROR: CPU must be suska or rd68021, not '$cpu'"
     exit 1

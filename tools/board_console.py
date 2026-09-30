@@ -58,7 +58,8 @@ def send_break(fd, baud):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    ap.add_argument("-d", "--device", default="/dev/ttyUSB0")
+    ap.add_argument("-d", "--device", default=os.environ.get("SUN3_CONSOLE", "/dev/ttyUSB0"),
+                    help="default $SUN3_CONSOLE, else /dev/ttyUSB0 (the DECA: /tmp/deca-console)")
     ap.add_argument("-b", "--baud", type=int, default=9600, choices=sorted(BAUDS))
     ap.add_argument("-t", "--time", type=float, default=30.0, help="seconds to listen")
     ap.add_argument("--until", help="stop once this string has been received")

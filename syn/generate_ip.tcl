@@ -25,6 +25,10 @@ source $here/boards.tcl
 set board v1s1
 if {[llength $argv] > 0} { set board [lindex $argv 0] }
 board_check $board
+if {[board_vendor $board] ne "xilinx"} {
+    puts "ERROR: BOARD=$board is not a Xilinx board; it is built by syn/quartus.tcl"
+    exit 1
+}
 
 set part      [board_part $board]
 set mig_part  [board_mig_part $board]

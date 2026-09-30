@@ -35,6 +35,7 @@ f16	= !((EN_IRQ7 & !RTC) #
    reg 				     f16, f17, f18, f19, f20;
    reg 				     IPL0, IPL1, IPL2;
 
+`ifdef SUN3_SIM
    initial
      begin
 	f16 <= $random;
@@ -46,6 +47,7 @@ f16	= !((EN_IRQ7 & !RTC) #
 	IPL1 <= $random;
 	IPL2 <= $random;
      end
+`endif
    
    /* try with quick synchronous update */
    always @(posedge CLK)

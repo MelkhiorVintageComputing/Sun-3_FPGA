@@ -25,6 +25,8 @@
 //
 // The entry written last is (next index - 1) mod 512.
 
+`include "sun3_attr.vh"
+
 module bus_trace (input             CLK,
                   input             RESET_n,
                   // the bus
@@ -58,7 +60,7 @@ module bus_trace (input             CLK,
    reg [8:0]  wptr;
    reg        frozen;
 
-   (* ram_style = "block" *) reg [127:0] ring [0:511];
+   `SUN3_RAM_BLOCK reg [127:0] ring [0:511];
 
    reg [31:0] trig_adr;
    reg        post;                         // counting down after the address trigger

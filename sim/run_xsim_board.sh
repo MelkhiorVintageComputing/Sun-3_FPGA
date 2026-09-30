@@ -1,10 +1,12 @@
 #!/bin/bash
 #
-# Run the board-level simulation (tb/tb_wukong.sv + boards/Wukong/wukong_top.sv)
-# under xsim.
+# Run the board-level simulation (tb/tb_wukong.sv + boards/Wukong/wukong_top.sv,
+# or with BOARD=deca tb/tb_deca.sv + boards/DECA/deca_top.sv) under xsim.
 #
 # Environment (sim/Makefile sets these from its knobs):
 #   BOARD             v1s1 (default) | v1 | v3 -- which MIG to take (ddr3 mode)
+#                     deca: the DECA's board top (fast memory only: there is
+#                     no model of its DDR3 controller)
 #   BOARD_MEM         fast (default): behavioural Wishbone RAM, no MIG
 #                     ddr3: the generated MIG (simulation variant) + Micron's model
 #   BOARD_CLKGEN      behavioural (default with fast) | real (default with ddr3)
@@ -63,6 +65,11 @@ fi
 defargs=(-d SUN3_SIM -d "SUN3_CPU_HZ=$hz" -d "SUN3_MEM_MIB=$mem" -d "SUN3_BOOTROM_FILE=\"$romfile\"")
 for d in $SUN3_DEFINES; do defargs+=(-d "$d"); done
 
+if [ "$BOARD" = deca ] && { [ "$BOARD_MEM" != fast ] || [ "$BOARD_CLKGEN" != behavioural ]; }; then
+	echo "BOARD=deca simulates with BOARD_MEM=fast and the behavioural clocks only" >&2
+	exit 1
+fi
+
 mig="$top/build/ip/$BOARD/sun3_mig/sun3_mig/user_design/rtl"
 ex="$top/build/ip/$BOARD/sun3_mig/sun3_mig/example_design/sim"
 if [ "$BOARD_MEM" = ddr3 ]; then
@@ -87,10 +94,20 @@ echo "== run directory $rundir =="
 compile_cpu
 compile_sun3
 
-board_src=("$top/rtl/sun3/reset_sync.sv" "$top/boards/Wukong/wukong_clkgen.sv"
-           "$top/boards/Wukong/wukong_top.sv")
-tb_src=("$top/tb/wb_ram_model.sv" "$top/tb/uart_monitor.sv" "$top/tb/uart_console.sv"
-        "$top/tb/tb_wukong.sv")
+if [ "$BOARD" = deca ]; then
+	board_src=("$top/rtl/sun3/reset_sync.sv" "$top/boards/DECA/deca_clkgen.sv"
+	           "$top/boards/DECA/deca_uart_rx.sv" "$top/boards/DECA/deca_uart_tx.sv"
+	           "$top/boards/DECA/deca_jtag_console.sv" "$top/boards/DECA/deca_top.sv")
+	tb_src=("$top/tb/wb_ram_model.sv" "$top/tb/uart_monitor.sv"
+	        "$top/tb/jtag_uart_model.sv" "$top/tb/tb_deca.sv")
+	tbtop=tb_deca
+else
+	board_src=("$top/rtl/sun3/reset_sync.sv" "$top/boards/Wukong/wukong_clkgen.sv"
+	           "$top/boards/Wukong/wukong_top.sv")
+	tb_src=("$top/tb/wb_ram_model.sv" "$top/tb/uart_monitor.sv" "$top/tb/uart_console.sv"
+	        "$top/tb/tb_wukong.sv")
+	tbtop=tb_wukong
+fi
 incargs=()
 if [ "$BOARD_MEM" = ddr3 ]; then
 	board_src+=("$top/boards/Wukong/wb_to_mig_ui.sv" "$top/boards/Wukong/mig_arb.sv")
@@ -120,7 +137,7 @@ xelab -debug $debug -O3 --timescale 1ns/1ps \
 	-generic_top "CPU_CLK_HZ=$hz" \
 	-generic_top "BAUD=$baud" \
 	-generic_top "MEM_LATENCY=$lat" \
-	sun3.tb_wukong sun3.glbl -s wukong_sim
+	sun3.$tbtop sun3.glbl -s board_sim
 
 echo "== running =="
-exec xsim wukong_sim -R "$@"
+exec xsim board_sim -R "$@"

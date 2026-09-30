@@ -489,6 +489,9 @@ module sun3_fpga(/* clock, reset */
    // ... and the last 512 bus cycles before a user fetch from page 0 (bus_trace.v):
    // 0xD0001000 status/re-arm, 0xD0002000+ the ring.
    wire [31:0] 			 bustrace_out;
+`ifdef SUN3_NO_BUS_TRACE
+   assign bustrace_out = 32'h0;
+`else
    bus_trace bustrace(.CLK(CLK),
 		      .RESET_n(~sys_reset),
 		      .AS_n(SUN3_AS_n),
@@ -507,6 +510,7 @@ module sun3_fpga(/* clock, reset */
 		      .RD_ADR(SUN3_ADR_IN[12:2]),
 		      .RD_STATUS(SUN3_ADR_IN[13:12] == 2'b01),
 		      .RD_DATA(bustrace_out));
+`endif
 
 
    // PROM (two access modes: at boot using SUN3_A, or mapped but matched through MA), read-only
