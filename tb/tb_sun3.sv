@@ -90,6 +90,22 @@ module tb_sun3 #(
    wire        phy_tx_en, phy_tx_er, phy_reset_n;
 `endif
 
+`ifdef SUN3_SCSI
+   // The SCSI disk: a file (+blk_image=<file>), behind the block seam.
+   wire        blk_start, blk_we, blk_done, blk_err, blk_ready, blk_buf_we;
+   wire [31:0] blk_lba, blk_count;
+   wire [7:0]  blk_buf_rdata, blk_buf_wdata;
+   wire [8:0]  blk_buf_addr;
+
+   blk_file #(.MAX_BLOCKS(65536)) disk (
+      .clk (CLK), .rst (sys_reset),
+      .blk_start (blk_start), .blk_we (blk_we), .blk_lba (blk_lba),
+      .blk_buf_rdata (blk_buf_rdata),
+      .blk_done (blk_done), .blk_err (blk_err), .blk_ready (blk_ready),
+      .blk_count (blk_count), .blk_buf_we (blk_buf_we),
+      .blk_buf_addr (blk_buf_addr), .blk_buf_wdata (blk_buf_wdata));
+`endif
+
    sun3_top dut (
       .CLK         (CLK),
       .clk4m9152   (clk4m9152),
@@ -113,6 +129,19 @@ module tb_sun3 #(
       .phy_crs     (1'b0),
       .phy_int_n   (1'b1),
       .phy_reset_n (phy_reset_n),
+`endif
+`ifdef SUN3_SCSI
+      .blk_start     (blk_start),
+      .blk_we        (blk_we),
+      .blk_lba       (blk_lba),
+      .blk_buf_rdata (blk_buf_rdata),
+      .blk_done      (blk_done),
+      .blk_err       (blk_err),
+      .blk_ready     (blk_ready),
+      .blk_count     (blk_count),
+      .blk_buf_we    (blk_buf_we),
+      .blk_buf_addr  (blk_buf_addr),
+      .blk_buf_wdata (blk_buf_wdata),
 `endif
       .V_INT       (1'b0),
       .leds        (leds),

@@ -51,7 +51,17 @@ ported from the Sun-2 project's DECA layer. RD68021 only (Suska does not
 fit). On the board at 16.667 MHz: DDR3 calibrates, the stock PROM
 (noparity) boots to `>` with "16MB memory installed" on the JTAG console,
 `h`, DDR3 write/read-back and the Invalid Page bus error past 16 MB all as
-on the Wukong. Not yet: `ETH=1` (DP83620), a faster clock.
+on the Wukong. With `ETH=1` (DP83620) NetBSD net-boots to the same FPU
+stop as on the Wukong.
+
+Step 5 (in progress): the 3/60's on-board SCSI (`rtl/sun3/sun3_si.sv`,
+`SUN3_SCSI`), its disk on the DECA's micro-SD. In simulation the PROM boots
+`sd(0,0,0)` from the SunOS 4.1.1 image (`tb/blk_file.sv`); on the DECA
+(`ETH=1 SCSI=1`, 16.667 MHz) the PROM loads SunOS 4.1.1 from the card, whose
+kernel probes `si0 at obio 0x140000 pri 2` and `sd0: <SUN300 cyl 2398 alt 2
+hd 16 sec 16>`, then stops with `Exception 0x7C at 0E09C19A` (in `idle`):
+a level-7 interrupt reaching the monitor's handler with the clock chip's
+status already clear. Being chased.
 
 ## Commands
 
@@ -71,6 +81,8 @@ on the Wukong. Not yet: `ETH=1` (DP83620), a faster clock.
 | `make -C syn lint BOARD=deca` | Quartus analysis & synthesis of `sun3_top` alone |
 | `make -C sim board BOARD=deca CPU=rd68021` | `tb_deca` + `deca_top`, behavioural clocks and RAM, the JTAG UART modelled (`jtag.log` must equal `console.log`) |
 | `make -C sim decaddr3` / `decaconsole` | unit tests: the DDR3 adapter against BrianHG's command port, the console bridge against the JTAG UART |
+| `make -C sim xsim CPU=rd68021 SCSI=1 XSIMARGS="-testplusarg blk_image=<img>"` | with the on-board SCSI and a file as its disk (`tb/blk_file.sv`, first 32 MiB loaded) |
+| `make -C syn bitstream BOARD=deca ETH=1 SCSI=1 [DISK_OFF_MIB=n]` | the DECA with SCSI, the disk at n MiB into the micro-SD (`tools/deca_reset.tcl` shows `disk: ready`, size) |
 
 `sim/Makefile` knobs: `CPU=suska|rd68021`, `ROM=fast|noparity|pristine`,
 `ROM_VER=1.9|2.8.3|3.0.1` (patched variants: 1.9 only), `MEM_MIB`,
@@ -292,6 +304,35 @@ From the Sun-2 project's DECA port, which has the history of every choice.
 - Configuring the FPGA tears down the JTAG console: the boot banner goes
   out before anything reads it. Attach, then `k2` at the monitor (or an
   ISSP reset with the console stopped) to see a boot.
+
+## The on-board SCSI (`SUN3_SCSI`)
+
+- `rtl/sun3/sun3_si.sv`: OBIO 0x140000, level 2. The NCR 5380 and the disk
+  target are `Inputs/Wish5380`'s (`wish5380`, `scsi_targ` as target 0,
+  `scsi_fabric`); the board logic around them (CSR, `fifo_count`/`fifo_data`,
+  the Am9516 subset with its chain-table fetch, the byte-per-cycle DVMA
+  engine) is transcribed from Wish5380's QEMU model of this board
+  (`cosim/patches/qemu/0004-...sun3-si...patch`), including the three rules
+  SunOS alone enforces: no DMA_IP at terminal count, DMA_ACTIVE clears when
+  the chip stops asking (asked once + phase gone + chip interrupting), no
+  DMA_CONFLICT. Driver sources: `Inputs/Wish5380/doc/drivers/`.
+- DVMA: the Ethernet and the SCSI share `wish7990_dvma_to_020` behind a
+  Wishbone arbiter in `sun3_fpga.v` (Ethernet first, as the Architecture
+  Manual orders them). The bridge maps bus byte offset k to Wishbone lane
+  k^1 (it was written for the little-endian LANCE); `sun3_si` follows it.
+- The block seam (Wish5380 `doc/block.md`) leaves `sun3_top` flattened; the
+  board supplies the media: `blk_sd` + the micro-SD on the DECA (offset
+  `DISK_OFF_MIB`), `tb/blk_file.sv` in simulation.
+- The PROM's `si_reset()` waits `DELAY(10000000)` (10 s) after a SCSI bus
+  reset: `fast` cuts it to 10 ms (`sun3_60_v1.9_fastboot.txt`); on the board
+  it is 10 s of silence after "EEPROM boot device".
+- `patches/RD68021/0001`: Quartus builds no ROM from a case whose 12-bit
+  index has fewer than half its entries labelled (the microcode: 1906 of
+  4096), and ignores `rom_style`; built from ~4,700 LE, the path from the
+  bus unit's falling-edge `early_q` into `rom_q` (half a period) failed
+  timing by 0.9-4.3 ns depending on placement. Indexed by 11 bits plus a
+  registered bit 11: 115 LE + 26 M9K, same function. DECA with ETH+SCSI:
+  38,778 LE (78%), 65% memory, WNS +0.839 ns.
 
 ## Boot PROM
 

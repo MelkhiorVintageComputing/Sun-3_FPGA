@@ -8,6 +8,10 @@
 //
 //   SUN3_CPU_RD68021     build Inputs/RD68021 instead of the Suska 68K30L
 //   SUN3_ETH_WISH7990    the on-board Ethernet, Wish7990 (Am79C90), at OBIO 0x120000
+//   SUN3_SCSI            the on-board SCSI (sun3_si.sv: Wish5380's 5380 and disk
+//                        target, an Am9516 subset), at OBIO 0x140000, with the
+//                        disk's block seam brought out to the board
+//   SUN3_HAS_DVMA        derived, not set: a DVMA master exists (either of the two)
 //   SUN3_FB              the on-board bw2 video memory, at the top of DDR3
 //                        (on unless SUN3_NO_FB).  Every real 3/60 has it and the PROM assumes it
 //                        (without it the monitor's `h' draws into an
@@ -50,6 +54,13 @@
 
 `ifndef SUN3_NO_FB
  `define SUN3_FB
+`endif
+
+`ifdef SUN3_ETH_WISH7990
+ `define SUN3_HAS_DVMA
+`endif
+`ifdef SUN3_SCSI
+ `define SUN3_HAS_DVMA
 `endif
 
 `ifndef SUN3_BYTE_PORTS_8

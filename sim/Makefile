@@ -32,6 +32,8 @@ ROM         ?= fast
 ROM_VER     ?= 1.9
 MEM_MIB     ?= 4
 ETH         ?= none
+# SCSI=1: the on-board SCSI, its disk a file (XSIMARGS="-testplusarg blk_image=<img>")
+SCSI        ?= 0
 MEM_LATENCY ?= 0
 MEM_FILL    ?= 00000000
 CPU_HZ      ?= 20000000
@@ -49,7 +51,7 @@ TOP = ..
 SHELL = /bin/bash
 
 # The run directory run_xsim.sh picks, so `check' reads the right log.
-TAG := $(CPU)-v$(ROM_VER)-$(ROM)-$(MEM_MIB)m-$(ETH)$(if $(filter-out 0,$(MEM_LATENCY)),-lat$(MEM_LATENCY))$(if $(filter-out 00000000,$(MEM_FILL)),-fill$(MEM_FILL))$(if $(filter-out 20000000,$(CPU_HZ)),-cpu$(shell echo $$(($(CPU_HZ)/1000000))))$(if $(filter-out 9600,$(BAUD)),-baud$(BAUD))$(foreach d,$(DEFINES),-$(subst =,_,$(d)))
+TAG := $(CPU)-v$(ROM_VER)-$(ROM)-$(MEM_MIB)m-$(ETH)$(if $(filter 1,$(SCSI)),-scsi)$(if $(filter-out 0,$(MEM_LATENCY)),-lat$(MEM_LATENCY))$(if $(filter-out 00000000,$(MEM_FILL)),-fill$(MEM_FILL))$(if $(filter-out 20000000,$(CPU_HZ)),-cpu$(shell echo $$(($(CPU_HZ)/1000000))))$(if $(filter-out 9600,$(BAUD)),-baud$(BAUD))$(foreach d,$(DEFINES),-$(subst =,_,$(d)))
 RUNDIR := $(TOP)/build/sim/xsim-$(TAG)
 BTAG := $(BOARD)-$(BOARD_MEM)-$(CPU)-v$(ROM_VER)-$(ROM)-$(MEM_MIB)m$(if $(filter fast,$(BOARD_MEM)),$(if $(filter-out 10,$(BOARD_LATENCY)),-lat$(BOARD_LATENCY)))$(if $(filter-out 20000000,$(CPU_HZ)),-cpu$(shell echo $$(($(CPU_HZ)/1000000))))$(foreach d,$(DEFINES),-$(subst =,_,$(d)))
 BRUNDIR := $(TOP)/build/sim/board-$(BTAG)
@@ -59,6 +61,7 @@ export SUN3_ROM=$(ROM)
 export SUN3_ROM_VER=$(ROM_VER)
 export SUN3_MEM_MIB=$(MEM_MIB)
 export SUN3_ETH=$(ETH)
+export SUN3_SCSI=$(SCSI)
 export SUN3_MEM_LATENCY=$(MEM_LATENCY)
 export SUN3_MEM_FILL=$(MEM_FILL)
 export SUN3_CPU_HZ=$(CPU_HZ)

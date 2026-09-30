@@ -64,6 +64,20 @@ module sun3_fpga(/* clock, reset */
 		 input 		phy_int_n,
 		 output 	phy_reset_n,
 `endif //  `ifdef SUN3_ETH_WISH7990
+`ifdef SUN3_SCSI
+		 /* the SCSI disk's block seam */
+		 output 	blk_start,
+		 output 	blk_we,
+		 output [31:0] 	blk_lba,
+		 output [7:0] 	blk_buf_rdata,
+		 input 		blk_done,
+		 input 		blk_err,
+		 input 		blk_ready,
+		 input [31:0] 	blk_count,
+		 input 		blk_buf_we,
+		 input [8:0] 	blk_buf_addr,
+		 input [7:0] 	blk_buf_wdata,
+`endif
 		 /* video irq */
 		 input 		V_INT,
 		 /* leds, debug */
@@ -168,6 +182,11 @@ module sun3_fpga(/* clock, reset */
 `ifdef SUN3_ETH_WISH7990
    wire 			 MATCH_AMDLE;
 `endif
+`ifdef SUN3_SCSI
+   wire 			 MATCH_SCSI;
+   wire [31:0] 			 scsi_out;
+   wire 			 scsi_ack, scsi_irq;
+`endif
    wire 			 MATCH_MEM;
    wire 			 MATCH_FB;
    
@@ -184,7 +203,9 @@ module sun3_fpga(/* clock, reset */
    wire 			 ethernetdma_bgack_n_out;
    
    
-`ifdef SUN3_ETH_WISH7990
+`ifdef SUN3_HAS_DVMA
+   // Any DVMA master (the Ethernet's or the SCSI's): both go through the one
+   // bridge below, so this is the bus's DVMA owner whoever asked.
    wire 			 ethernet_dma_active = (~ethernetdma_br_n_out & ~ethernetdma_bgack_n_out);
 `else
    wire 			 ethernet_dma_active = 1'b0;
@@ -542,7 +563,9 @@ module sun3_fpga(/* clock, reset */
 `ifdef SUN3_ETH_WISH7990
    assign MATCH_AMDLE    = (EN_DEV) & (TYPE == 2'h1) & !DISACC & (ma_pmap2devices[7:4] == 4'h9) & C_S6;
 `endif
-   //assign MATCH_SCSI     = (EN_DEV) & (TYPE == 2'h1) & !DISACC & (ma_pmap2devices[7:4] == 4'hA) & C_S6;
+`ifdef SUN3_SCSI
+   assign MATCH_SCSI     = (EN_DEV) & (TYPE == 2'h1) & !DISACC & (ma_pmap2devices[7:4] == 4'hA) & C_S6;
+`endif
    //assign MATCH_RSVD1    = (EN_DEV) & (TYPE == 2'h1) & !DISACC & (ma_pmap2devices[7:4] == 4'hB) & C_S6;
    //assign MATCH_RSVD2    = (EN_DEV) & (TYPE == 2'h1) & !DISACC & (ma_pmap2devices[7:4] == 4'hC) & C_S6;
    //assign MATCH_RSVD3    = (EN_DEV) & (TYPE == 2'h1) & !DISACC & (ma_pmap2devices[7:4] == 4'hD) & C_S6;
@@ -810,6 +833,9 @@ module sun3_fpga(/* clock, reset */
 `ifdef SUN3_ETH_WISH7990
 		       MATCH_AMDLE     ? ethernet_out :
 `endif
+`ifdef SUN3_SCSI
+		       MATCH_SCSI      ? scsi_out :
+`endif
 		       32'hDEADBEEF;
 
    // DSACK generator. has knowledge of timings for all devices
@@ -845,6 +871,9 @@ module sun3_fpga(/* clock, reset */
 		     (~SUN3_RW_n & w_ack & (MATCH_MEM | MATCH_FB)) | // wishbone
 `ifdef SUN3_ETH_WISH7990
 		     (~SUN3_RW_n & ~ethernet_dsack_n_out[0] & (MATCH_AMDLE)) | // ethernet (PVC bridge)
+`endif
+`ifdef SUN3_SCSI
+		     (scsi_ack & MATCH_SCSI) | // SCSI board, reads and writes: a clock after it saw the cycle
 `endif
 		     1'b0);
    
@@ -910,8 +939,12 @@ module sun3_fpga(/* clock, reset */
 `endif
    /* no Parity support */
    assign PAR_IRQ = 1'b0;
-   /* no Parity support */
+   /* SCSI: level 2, autovectored */
+`ifdef SUN3_SCSI
+   assign S_IRQ = scsi_irq;
+`else
    assign S_IRQ = 1'b0;
+`endif
    
    sun3_irq_priority irqenc (.CLK(CLK),
     			     .EN_IRQ7(EN_IRQ7),
@@ -988,38 +1021,6 @@ module sun3_fpga(/* clock, reset */
    wire [29:0] 	       wishm_adr;
    wire [31:0] 	       wishm_dat_w, wishm_dat_r;
 
-   wish7990_dvma_to_020 dvma_from_eth (
-				   .clk         (CLK),
-				   .reset_n     (P_RESET_n),
-				   .wb_cyc_i    (wishm_cyc),
-				   .wb_stb_i    (wishm_stb),
-				   .wb_we_i     (wishm_we),
-				   .wb_sel_i    (wishm_sel),
-				   .wb_adr_i    (wishm_adr),
-				   .wb_dat_i    (wishm_dat_w),
-				   .wb_dat_o    (wishm_dat_r),
-				   .wb_ack_o    (wishm_ack),
-				   .wb_err_o    (wishm_err),
-				   // mc_D_IN is the system's own data mux, so a
-				   // DVMA read sees whatever device answered -
-				   // which is how the temlib bridge did it too.
-				   .mc_A_OUT    (ethernetdma_addr_out),
-				   .mc_D_IN     (P_DATA_OUT),
-				   .mc_D_OUT    (ethernetdma_data_out),
-				   .mc_FC       (ethernetdma_fc_out),
-				   .mc_SIZ      (ethernetdma_siz_out),
-				   .mc_AS_N_IN  (SUN3_AS_n),
-				   .mc_AS_N_OUT (ethernetdma_as_n_out),
-				   .mc_DS_N     (ethernetdma_ds_n_out),
-				   .mc_RW_N     (ethernetdma_rw_n_out),
-				   .mc_DSACK0_N (P_DSACK_n[0]),
-				   .mc_DSACK1_N (P_DSACK_n[1]),
-				   .mc_BERR_N   (P_BERR_n),
-				   .mc_BR_N     (ethernetdma_br_n_out),
-				   .mc_BG_N     (ethernetdma_bg_n),
-				   .mc_BGACK_N  (ethernetdma_bgack_n_out)
-				   );
-
    wire 	       wish_bswp, wish_acon, wish_bcon;
 
    wish7990 #(.PHY_DATA_W (4),          // MII
@@ -1075,6 +1076,137 @@ module sun3_fpga(/* clock, reset */
    assign phy_reset_n = P_RESET_n;
 
 `endif //  `ifdef SUN3_ETH_WISH7990
+
+`ifdef SUN3_HAS_DVMA
+   // ---- DVMA: the bridge onto the 68020 bus, and who gets it ---------------
+   //
+   // One bridge (wish7990_dvma_to_020: BR/BG/BGACK, 0x0FF00000 + address,
+   // supervisor data, through the MMU) and a Wishbone arbiter in front of it:
+   // the Ethernet first, then the SCSI, the order the Architecture Manual
+   // gives (section 6).  A grant lasts one Wishbone transaction.
+   wire 	       eth_cyc, eth_stb, eth_we, eth_ack, eth_err;
+   wire [3:0] 	       eth_sel;
+   wire [29:0] 	       eth_adr;
+   wire [31:0] 	       eth_dat_w, eth_dat_r;
+   wire 	       si_cyc, si_we, si_ack, si_err;
+   wire [3:0] 	       si_sel;
+   wire [29:0] 	       si_adr;
+   wire [31:0] 	       si_dat_w, si_dat_r;
+
+   reg 		       dv_busy, dv_si;
+   wire 	       dv_cyc, dv_stb, dv_we, dv_ack, dv_err;
+   wire [3:0] 	       dv_sel;
+   wire [29:0] 	       dv_adr;
+   wire [31:0] 	       dv_dat_w, dv_dat_r;
+
+   always @(posedge CLK)
+     if (~P_RESET_n)
+       begin
+	  dv_busy <= 1'b0;
+	  dv_si   <= 1'b0;
+       end
+     else if (~dv_busy)
+       begin
+	  if (eth_cyc & eth_stb)  begin dv_busy <= 1'b1; dv_si <= 1'b0; end
+	  else if (si_cyc)        begin dv_busy <= 1'b1; dv_si <= 1'b1; end
+       end
+     else if (dv_ack | dv_err)
+       dv_busy <= 1'b0;
+
+   assign dv_cyc   = dv_busy & (dv_si ? si_cyc : eth_cyc);
+   assign dv_stb   = dv_busy & (dv_si ? si_cyc : eth_stb);
+   assign dv_we    = dv_si ? si_we    : eth_we;
+   assign dv_sel   = dv_si ? si_sel   : eth_sel;
+   assign dv_adr   = dv_si ? si_adr   : eth_adr;
+   assign dv_dat_w = dv_si ? si_dat_w : eth_dat_w;
+   assign eth_ack  = dv_busy & ~dv_si & dv_ack;
+   assign eth_err  = dv_busy & ~dv_si & dv_err;
+   assign si_ack   = dv_busy &  dv_si & dv_ack;
+   assign si_err   = dv_busy &  dv_si & dv_err;
+   assign eth_dat_r = dv_dat_r;
+   assign si_dat_r  = dv_dat_r;
+
+`ifdef SUN3_ETH_WISH7990
+   assign eth_cyc = wishm_cyc;  assign eth_stb = wishm_stb;  assign eth_we = wishm_we;
+   assign eth_sel = wishm_sel;  assign eth_adr = wishm_adr;  assign eth_dat_w = wishm_dat_w;
+   assign wishm_ack = eth_ack;  assign wishm_err = eth_err;  assign wishm_dat_r = eth_dat_r;
+`else
+   assign eth_cyc = 1'b0;  assign eth_stb = 1'b0;  assign eth_we = 1'b0;
+   assign eth_sel = 4'h0;  assign eth_adr = 30'h0; assign eth_dat_w = 32'h0;
+`endif
+`ifndef SUN3_SCSI
+   assign si_cyc = 1'b0;  assign si_we = 1'b0;  assign si_sel = 4'h0;
+   assign si_adr = 30'h0; assign si_dat_w = 32'h0;
+`endif
+
+   wish7990_dvma_to_020 dvma_bridge (
+				   .clk         (CLK),
+				   .reset_n     (P_RESET_n),
+				   .wb_cyc_i    (dv_cyc),
+				   .wb_stb_i    (dv_stb),
+				   .wb_we_i     (dv_we),
+				   .wb_sel_i    (dv_sel),
+				   .wb_adr_i    (dv_adr),
+				   .wb_dat_i    (dv_dat_w),
+				   .wb_dat_o    (dv_dat_r),
+				   .wb_ack_o    (dv_ack),
+				   .wb_err_o    (dv_err),
+				   // mc_D_IN is the system's own data mux, so a
+				   // DVMA read sees whatever device answered -
+				   // which is how the temlib bridge did it too.
+				   .mc_A_OUT    (ethernetdma_addr_out),
+				   .mc_D_IN     (P_DATA_OUT),
+				   .mc_D_OUT    (ethernetdma_data_out),
+				   .mc_FC       (ethernetdma_fc_out),
+				   .mc_SIZ      (ethernetdma_siz_out),
+				   .mc_AS_N_IN  (SUN3_AS_n),
+				   .mc_AS_N_OUT (ethernetdma_as_n_out),
+				   .mc_DS_N     (ethernetdma_ds_n_out),
+				   .mc_RW_N     (ethernetdma_rw_n_out),
+				   .mc_DSACK0_N (P_DSACK_n[0]),
+				   .mc_DSACK1_N (P_DSACK_n[1]),
+				   .mc_BERR_N   (P_BERR_n),
+				   .mc_BR_N     (ethernetdma_br_n_out),
+				   .mc_BG_N     (ethernetdma_bg_n),
+				   .mc_BGACK_N  (ethernetdma_bgack_n_out)
+				   );
+
+`endif //  `ifdef SUN3_HAS_DVMA
+
+`ifdef SUN3_SCSI
+   // ---- the on-board SCSI (OBIO 0x140000) ------------------------------------
+   sun3_si #(.CLK_PERIOD_PS(1000000000 / (`SUN3_CPU_HZ / 1000))) scsi (
+       .clk        (CLK),
+       .rst        (~P_RESET_n),
+       .match      (MATCH_SCSI),
+       .rw_n       (SUN3_RW_n),
+       .adr        (SUN3_ADR_IN[4:0]),
+       .wdata      (SUN3_DATA_IN),
+       .rdata      (scsi_out),
+       .ack        (scsi_ack),
+       .irq        (scsi_irq),
+       .m_cyc      (si_cyc),
+       .m_we       (si_we),
+       .m_sel      (si_sel),
+       .m_adr      (si_adr),
+       .m_dat_o    (si_dat_w),
+       .m_dat_i    (si_dat_r),
+       .m_ack      (si_ack),
+       .m_err      (si_err),
+       .blk_start     (blk_start),
+       .blk_we        (blk_we),
+       .blk_lba       (blk_lba),
+       .blk_buf_rdata (blk_buf_rdata),
+       .blk_done      (blk_done),
+       .blk_err       (blk_err),
+       .blk_ready     (blk_ready),
+       .blk_count     (blk_count),
+       .blk_buf_we    (blk_buf_we),
+       .blk_buf_addr  (blk_buf_addr),
+       .blk_buf_wdata (blk_buf_wdata),
+       .dma_active    ()
+   );
+`endif
 
 endmodule // sun2_fpga
 

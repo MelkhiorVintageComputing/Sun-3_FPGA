@@ -11,6 +11,7 @@
 compile_sun3() {
 	"$top/tools/patch_inputs.sh" z8530_scc
 	[ "$eth" = wish7990 ] && "$top/tools/patch_inputs.sh" Wish7990
+	[ "${scsi:-0}" = 1 ] && "$top/tools/patch_inputs.sh" Wish5380
 
 	# The Sun-3 gateware is plain Verilog; compiled as such.
 	echo "== compiling the Sun-3 gateware (Verilog) =="
@@ -37,7 +38,15 @@ compile_sun3() {
 		"$top/rtl/sun3/wish7990_sun3_regs.v" \
 		"$top/rtl/sun3/wish7990_dvma_to_020.v"
 
-	sun3_sv=("$top/build/inputs/z8530_scc/z8530_scc.sv")
+	sun3_sv=()
+	if [ "${scsi:-0}" = 1 ]; then
+		# The package first: its struct types are declared at file scope.
+		local s="$top/build/inputs/Wish5380/src"
+		sun3_sv+=("$s/wish5380_pkg.sv" "$s/sci_regs.sv" "$s/sci_bus.sv"
+			"$s/wish5380.sv" "$s/scsi_fabric.sv" "$s/scsi_targ.sv"
+			"$top/rtl/sun3/sun3_si.sv")
+	fi
+	sun3_sv+=("$top/build/inputs/z8530_scc/z8530_scc.sv")
 	if [ "$eth" = wish7990 ]; then
 		local w="$top/build/inputs/Wish7990/src"
 		sun3_sv+=("$w/wish7990_pkg.sv" "$w/crc32_eth.sv" "$w/sync_fifo.sv"

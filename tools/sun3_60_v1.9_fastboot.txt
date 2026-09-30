@@ -56,3 +56,11 @@
 # timer ticks (~1 s) for its reply -- the whole wait, every boot, when there
 # is no keyboard.  addil #1000,%d7 -> #10.
 0fef1a62 03e8 000a
+
+# SCSI bus reset recovery: si_reset() ends with DELAY(10000000), ten seconds
+# for the disks to come back (mon3/si.c, in Inputs/Wish5380/doc/drivers), as
+# movel #160000000,%d0 (the delay x 16, shifted by the CPU speed factor) and
+# a count-down loop -- ~100 minutes of wall clock in simulation.  The disk
+# target here is ready at once: 160000000 -> 160000 (10 ms).
+0fefa468 0989 0002
+0fefa46a 6800 7100

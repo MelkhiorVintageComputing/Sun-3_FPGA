@@ -57,3 +57,10 @@ puts [format "PHY    : present=%s cfg_done=%s link=%s speed=%s duplex=%s" \
         [expr {$fd eq "1" ? "full" : "half"}]]
 puts [format "diag   : 0x%02x (as lit: 0x%02x)" $leds [expr {~$leds & 0xFF}]]
 puts [format "todebug: 0x%02x" $todbg]
+if {[string length $raw] >= 66} {
+    set d_ready [string index $raw 32]
+    set d_err   [string index $raw 33]
+    set d_count [b2i [string range $raw 34 65]]
+    puts [format "disk   : ready=%s last_err=%s blocks=%d (%.1f GiB)" \
+            $d_ready $d_err $d_count [expr {$d_count * 512.0 / 1073741824.0}]]
+}

@@ -20,6 +20,8 @@
 #   -eth       0 | 1                 the Wish7990 on the DP83620
 #   -fb        0 | 1                 the bw2 video memory (the PROM needs it)
 #   -bus_trace 0 | 1                 the on-chip bus trace (8 M9K)
+#   -scsi      0 | 1                 the on-board SCSI, its disk on the micro-SD
+#   -disk_off_mib <n>                where on the card the disk starts, MiB
 #   -mem_mib   <n>                   main memory
 #   -romfile   <name>                the PROM, from build/rom/
 #   -eram      0 | 1                 see below; 1 for any real build
@@ -46,6 +48,8 @@ array set opt {
     -eth       0
     -fb        1
     -bus_trace 1
+    -scsi      0
+    -disk_off_mib 0
     -mem_mib   16
     -romfile   bootrom_sun3_60_v1.9_noparity_32bits.vh
     -eram      1
@@ -95,9 +99,13 @@ set defines [list SUN3_QUARTUS SUN3_CPU_RD68021 \
 if {$opt(-eth) == 1}       { lappend defines SUN3_ETH_WISH7990 }
 if {$opt(-fb) == 0}        { lappend defines SUN3_NO_FB }
 if {$opt(-bus_trace) == 0} { lappend defines SUN3_NO_BUS_TRACE }
+if {$opt(-scsi) == 1}      { lappend defines SUN3_SCSI }
 
 puts "== Sun-3 for [board_family $opt(-board)] [board_device $opt(-board)], entity $opt(-topent) =="
 puts "== CPU $opt(-cpu) at $opt(-cpu_hz) Hz[expr {$opt(-cpu_div) ? " (VCO/$opt(-cpu_div))" : ""}], duty $opt(-cpu_duty)%, $opt(-mem_mib) MiB, PROM $opt(-romfile), ETH=$opt(-eth), FB=$opt(-fb) =="
+if {$opt(-scsi) == 1} {
+    puts "== SCSI disk at $opt(-disk_off_mib) MiB on the micro-SD ([expr {$opt(-disk_off_mib) * 2048}] sectors) =="
+}
 puts "== defines: $defines =="
 puts "== output: $out =="
 
@@ -119,6 +127,7 @@ if {$opt(-topent) eq "deca_top"} {
     set_parameter -name CPU_CLK_HZ $opt(-cpu_hz)
     set_parameter -name CPU_DIV    $opt(-cpu_div)
     set_parameter -name CPU_DUTY   $opt(-cpu_duty)
+    set_parameter -name DISK_LBA_OFFSET [expr {$opt(-disk_off_mib) * 2048}]
 }
 
 # --- the trap that emits no warning ---------------------------------------
@@ -154,8 +163,18 @@ foreach d $defines { set_global_assignment -name VERILOG_MACRO $d }
 # The same lists as build.tcl, in the same order.  Inputs come from their
 # patched copies in build/inputs (tools/patch_inputs.sh), BrianHG's controller
 # from Inputs/ as is.
+# Wish5380's package first: its struct types are declared at file scope, and
+# deca_top uses the block seam's whether or not the SCSI is built.
+set w5 $top/build/inputs/Wish5380/src
+set sv [list $w5/wish5380_pkg.sv]
+if {$opt(-scsi) == 1} {
+    lappend sv $w5/sci_regs.sv $w5/sci_bus.sv $w5/wish5380.sv \
+        $w5/scsi_fabric.sv $w5/scsi_targ.sv $top/rtl/sun3/sun3_si.sv
+    if {$opt(-topent) eq "deca_top"} { lappend sv $w5/sd_spi.sv $w5/blk_sd.sv }
+}
+
 set rd $top/build/inputs/RD68021/rtl
-set sv [list \
+lappend sv \
     $rd/rd68021_pkg.sv \
     $rd/gen/rd68021_frame_pkg.sv \
     $rd/gen/rd68021_ucode_pkg.sv \
@@ -173,7 +192,7 @@ set sv [list \
     $rd/rd68021_icache.sv \
     $rd/rd68021_ifu.sv \
     $rd/rd68021_seq.sv \
-    $rd/rd68021_top.sv ]
+    $rd/rd68021_top.sv
 
 set v2001 [list \
     $top/rtl/sun3/sun3_top.v \

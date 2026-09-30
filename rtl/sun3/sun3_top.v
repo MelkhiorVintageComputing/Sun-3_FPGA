@@ -49,6 +49,20 @@ module sun3_top(/* clock, reset */
 	   input wire 	     phy_int_n,
 	   output wire 	     phy_reset_n,
 `endif
+`ifdef SUN3_SCSI
+	   /* the SCSI disk's block seam (Inputs/Wish5380 doc/block.md) */
+	   output wire 	     blk_start,
+	   output wire 	     blk_we,
+	   output wire [31:0] blk_lba,
+	   output wire [7:0] blk_buf_rdata,
+	   input wire 	     blk_done,
+	   input wire 	     blk_err,
+	   input wire 	     blk_ready,
+	   input wire [31:0] blk_count,
+	   input wire 	     blk_buf_we,
+	   input wire [8:0]  blk_buf_addr,
+	   input wire [7:0]  blk_buf_wdata,
+`endif
 	   /* video irq */
 	   input wire 	     V_INT,
 	   /* leds, debug */
@@ -168,6 +182,19 @@ module sun3_top(/* clock, reset */
 		  .phy_reset_n(phy_reset_n),
 `endif
 
+`ifdef SUN3_SCSI
+		  .blk_start(blk_start),
+		  .blk_we(blk_we),
+		  .blk_lba(blk_lba),
+		  .blk_buf_rdata(blk_buf_rdata),
+		  .blk_done(blk_done),
+		  .blk_err(blk_err),
+		  .blk_ready(blk_ready),
+		  .blk_count(blk_count),
+		  .blk_buf_we(blk_buf_we),
+		  .blk_buf_addr(blk_buf_addr),
+		  .blk_buf_wdata(blk_buf_wdata),
+`endif
 		  .V_INT(V_INT),
 
 		  .leds(leds_n),

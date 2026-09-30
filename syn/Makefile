@@ -120,20 +120,24 @@ endif  # not deca
 #   make program BOARD=deca     over the on-board USB-Blaster II (JTAG only)
 #   make lint BOARD=deca        Quartus analysis & synthesis of sun3_top alone
 #
-# Extra knobs: CPU_DUTY (50), BUS_TRACE (1), ALLOW_NEG (0: a .sof is written
-# only if timing is met), SEED, JOBS.  Quartus is QUARTUS_ROOTDIR
+# Extra knobs: CPU_DUTY (50), BUS_TRACE (1), SCSI (0: the on-board SCSI, its
+# disk on the micro-SD), DISK_OFF_MIB (0: where on the card the disk starts),
+# ALLOW_NEG (0: a .sof is written only if timing is met), SEED, JOBS.  Quartus is QUARTUS_ROOTDIR
 # (/opt/Altera/quartus), through altera.sh.
 ifeq ($(BOARD),deca)
 CPU_DUTY  ?= 50
 BUS_TRACE ?= 1
+SCSI      ?= 0
+DISK_OFF_MIB ?= 0
 ALLOW_NEG ?= 0
 SEED      ?= 0
 JOBS      ?= 8
-QOUTDIR = $(SYNDIR)/quartus/deca-$(CPU)-cpu$(CPU_MHZ_TAG)$(if $(CPU_DIV),-div$(CPU_DIV),)$(if $(filter-out 50,$(CPU_DUTY)),-duty$(CPU_DUTY),)-$(MEM_MIB)m-v$(ROM_VER)-$(ROM)$(if $(filter 1,$(ETH)),-eth,)$(if $(filter 0,$(FB)),-nofb,)$(if $(filter 0,$(BUS_TRACE)),-notrace,)$(if $(filter-out 0,$(SEED)),-seed$(SEED),)
+QOUTDIR = $(SYNDIR)/quartus/deca-$(CPU)-cpu$(CPU_MHZ_TAG)$(if $(CPU_DIV),-div$(CPU_DIV),)$(if $(filter-out 50,$(CPU_DUTY)),-duty$(CPU_DUTY),)-$(MEM_MIB)m-v$(ROM_VER)-$(ROM)$(if $(filter 1,$(ETH)),-eth,)$(if $(filter 0,$(FB)),-nofb,)$(if $(filter 0,$(BUS_TRACE)),-notrace,)$(if $(filter 1,$(SCSI)),-scsi$(if $(filter-out 0,$(DISK_OFF_MIB)),-off$(DISK_OFF_MIB)m),)$(if $(filter-out 0,$(SEED)),-seed$(SEED),)
 SOF     = $(abspath $(QOUTDIR))/sun3.sof
 QARGS   = -root $(abspath $(TOP)) -board deca -cpu $(CPU) \
           -cpu_hz $(CPU_HZ) -cpu_div $(if $(CPU_DIV),$(CPU_DIV),0) -cpu_duty $(CPU_DUTY) \
           -eth $(ETH) -fb $(FB) -bus_trace $(BUS_TRACE) -mem_mib $(MEM_MIB) \
+          -scsi $(SCSI) -disk_off_mib $(DISK_OFF_MIB) \
           -romfile $(ROMFILE) -allow_neg $(ALLOW_NEG) -jobs $(JOBS) -seed $(SEED)
 
 rom:
@@ -143,6 +147,7 @@ inputs:
 	$(TOP)/tools/patch_inputs.sh RD68021
 	$(TOP)/tools/patch_inputs.sh z8530_scc
 	$(TOP)/tools/patch_inputs.sh Wish7990
+	$(TOP)/tools/patch_inputs.sh Wish5380
 
 bitstream: rom inputs
 	mkdir -p $(abspath $(QOUTDIR)); rm -f $(SOF)

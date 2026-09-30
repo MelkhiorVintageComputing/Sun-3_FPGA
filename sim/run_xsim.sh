@@ -12,6 +12,8 @@
 #   SUN3_ROM_VER      1.9 (default) | 2.8.3 | 3.0.1  -- patched variants: 1.9 only
 #   SUN3_MEM_MIB      installed memory in MiB (default 4)
 #   SUN3_ETH          none (default) | wish7990
+#   SUN3_SCSI         0 (default) | 1: the on-board SCSI, with tb/blk_file.sv as
+#                     its disk (+blk_image=<file>, +blk_writeback=<file>)
 #   SUN3_MEM_LATENCY  Wishbone wait states (default 0)
 #   SUN3_MEM_FILL     never-written memory reads as this, hex (default 00000000)
 #   SUN3_CPU_HZ       CPU clock (default 20000000)
@@ -45,6 +47,7 @@ rom=${SUN3_ROM:-fast}
 romver=${SUN3_ROM_VER:-1.9}
 mem=${SUN3_MEM_MIB:-4}
 eth=${SUN3_ETH:-none}
+scsi=${SUN3_SCSI:-0}
 lat=${SUN3_MEM_LATENCY:-0}
 fill=${SUN3_MEM_FILL:-00000000}
 hz=${SUN3_CPU_HZ:-20000000}
@@ -58,6 +61,7 @@ romfile="bootrom_sun3_60_v${romver}_${rom}_32bits.vh"
 # the Sun-2 project paid for).  So every knob that changes the snapshot is in
 # the name.
 tag="$cpu-v$romver-$rom-${mem}m-$eth"
+[ "$scsi" = 1 ] && tag="$tag-scsi"
 [ "$lat" != 0 ] && tag="$tag-lat$lat"
 [ "$fill" != 00000000 ] && tag="$tag-fill$fill"
 [ "$hz" != 20000000 ] && tag="$tag-cpu$((hz / 1000000))"
@@ -79,9 +83,12 @@ none) ;;
 wish7990) defargs+=(-d SUN3_ETH_WISH7990) ;;
 *) echo "SUN3_ETH must be none or wish7990, not '$eth'" >&2; exit 1 ;;
 esac
+[ "$scsi" = 1 ] && defargs+=(-d SUN3_SCSI)
 for d in $SUN3_DEFINES; do
 	defargs+=(-d "$d")
 done
+tb_disk=()
+[ "$scsi" = 1 ] && tb_disk=("$top/tb/blk_file.sv")
 
 cd "$rundir"
 echo "== run directory $rundir =="
@@ -99,6 +106,7 @@ xvlog --sv --work sun3 \
 	"$top/tb/wb_ram_model.sv" \
 	"$top/tb/uart_monitor.sv" \
 	"$top/tb/uart_console.sv" \
+	"${tb_disk[@]}" \
 	"$top/tb/tb_sun3.sv"
 
 # Signal visibility for $dumpvars costs a lot of run time, so it is opt-in.

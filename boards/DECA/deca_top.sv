@@ -50,7 +50,11 @@ module deca_top #(
     // acceptance and its arrival in DRAM returns the old contents (the Sun-2
     // traced the mechanism, though it proved not to be its corruption).  On,
     // at ~460 LE, for correctness by construction.
-    parameter bit DDR3_SMART = 1'b1
+    parameter bit DDR3_SMART = 1'b1,
+    // Where the SCSI disk starts on the micro-SD card, in 512-byte sectors
+    // (syn/Makefile DISK_OFF_MIB * 2048).  The card can hold several copies
+    // of a disk; moving to another one is how a damaged copy is set aside.
+    parameter int DISK_LBA_OFFSET = 0
 ) (
     input  wire        MAX10_CLK1_50,   // PIN_M8,  2.5 V
     input  wire [1:0]  KEY,             // H21 H22, 1.5 V Schmitt, active low
@@ -75,6 +79,20 @@ module deca_top #(
     output wire        NET_MDC,
     output wire        NET_PCF_EN,
     inout  wire        NET_MDIO,
+
+    // micro-SD, SPI mode, through the U22 level translator (SN74AVCA406L);
+    // four of these only configure the translator.  Pinout: DECA user
+    // manual Table 3-21; from the Sun-2 project's deca_top.
+    output wire        SD_CLK,          // T20, SCK
+    output wire        SD_CMD,          // T21, MOSI
+    input  wire        SD_MISO,         // R18, DAT0
+    output wire        SD_CS_N,         // R20, DAT3 as chip select
+    output wire        SD_DAT1,         // T18, unused in SPI mode
+    output wire        SD_DAT2,         // T19, unused in SPI mode
+    output wire        SD_SEL,          // P13, card VCCIO select
+    output wire        SD_CMD_DIR,      // U22
+    output wire        SD_D0_DIR,       // T22
+    output wire        SD_D123_DIR,     // U21
 
 `ifdef SUN3_SIM
     output wire        av_address_o,
@@ -197,6 +215,13 @@ module deca_top #(
    wire        en_boot;
    wire        sun_tx, sun_rx;
 
+   // The SCSI disk's block seam (Inputs/Wish5380 doc/block.md): flattened on
+   // the machine's side, which is Verilog; the types come from wish5380_pkg.
+   wire        blk_start, blk_we;
+   wire [31:0] blk_lba;
+   wire [7:0]  blk_buf_rdata;
+   blk_rsp_t   blk_rsp;
+
    sun3_top machine (
        .CLK         (cpu_clk),
        .clk4m9152   (clk_serial),
@@ -220,6 +245,19 @@ module deca_top #(
        .phy_crs     (NET_CRS),
        .phy_int_n   (1'b1),
        .phy_reset_n (),              // the board owns the PHY's reset, below
+`endif
+`ifdef SUN3_SCSI
+       .blk_start     (blk_start),
+       .blk_we        (blk_we),
+       .blk_lba       (blk_lba),
+       .blk_buf_rdata (blk_buf_rdata),
+       .blk_done      (blk_rsp.done),
+       .blk_err       (blk_rsp.err),
+       .blk_ready     (blk_rsp.ready),
+       .blk_count     (blk_rsp.count),
+       .blk_buf_we    (blk_rsp.buf_we),
+       .blk_buf_addr  (blk_rsp.buf_addr),
+       .blk_buf_wdata (blk_rsp.buf_wdata),
 `endif
        .V_INT       (1'b0),
        .leds        (leds),
@@ -393,6 +431,57 @@ module deca_top #(
    );
 
    // ------------------------------------------------------------------
+   // The SCSI disk's media: the micro-SD card, in SPI mode
+   //
+   // blk_sd from Inputs/Wish5380, unchanged, on cpu_clk: the block seam has
+   // no clock crossing by contract, so the back end shares the target's
+   // clock.  The disk starts DISK_LBA_OFFSET sectors into the card, applied
+   // here at the media.  The translator's four control pins are constants:
+   // SPI never turns a line around.  DAT1/DAT2 share D123_DIR with the chip
+   // select, so they point at the card too and are driven to their idle
+   // high rather than left to Quartus's reserved-pin ground.
+   // ------------------------------------------------------------------
+   assign SD_SEL      = 1'b0;   // VCCIO_SD = 3.3 V at the card
+   assign SD_CMD_DIR  = 1'b1;   // MOSI out
+   assign SD_D0_DIR   = 1'b0;   // MISO in
+   assign SD_D123_DIR = 1'b1;   // DAT3 (chip select) out
+   assign SD_DAT1     = 1'b1;
+   assign SD_DAT2     = 1'b1;
+
+`ifdef SUN3_SCSI
+   blk_req_t blk_req_media;
+   always_comb begin
+      blk_req_media.start     = blk_start;
+      blk_req_media.we        = blk_we;
+      blk_req_media.lba       = blk_lba + DISK_LBA_OFFSET[31:0];
+      blk_req_media.buf_rdata = blk_buf_rdata;
+   end
+
+   // In picoseconds, in two steps: some front ends mangle a 1e12 literal.
+   localparam int SD_CLK_PERIOD_PS = 1_000_000_000 / (CPU_CLK_HZ / 1000);
+
+   blk_sd #(.CLK_PERIOD_PS(SD_CLK_PERIOD_PS)) sdcard (
+       .clk_i     (cpu_clk),
+       .rst_i     (sys_reset),
+       .blk_i     (blk_req_media),
+       .blk_o     (blk_rsp),
+       .sd_clk_o  (SD_CLK),
+       .sd_cs_n_o (SD_CS_N),
+       .sd_mosi_o (SD_CMD),
+       .sd_miso_i (SD_MISO)
+   );
+`else
+   // No disk: the card deselected, not floating.
+   assign blk_rsp = '0;
+   assign SD_CLK  = 1'b0;
+   assign SD_CMD  = 1'b0;
+   assign SD_CS_N = 1'b1;
+   wire _unused_sd = &{1'b0, SD_MISO, blk_start, blk_we, blk_lba, blk_buf_rdata, 1'b0};
+   assign blk_start = 1'b0; assign blk_we = 1'b0;
+   assign blk_lba = 32'h0;  assign blk_buf_rdata = 8'h0;
+`endif
+
+   // ------------------------------------------------------------------
    // Ethernet PHY management (DP83620 -> 10BASE-T MII)
    // ------------------------------------------------------------------
    wire        phy_present, phy_cfg_done, phy_link, phy_fd;
@@ -483,10 +572,19 @@ module deca_top #(
    // out.  Read and pulsed by tools/deca_reset.tcl (source bit 0 = reset,
    // bit 1 = BREAK on ttya).
    //
-   //   probe 31:24 ddr3_rdcal   23 ddr3_cal_pass  22 ddr3_ready  21 phy_link
-   //         20 phy_present  19 phy_cfg_done  18:17 phy_speed  16 phy_fd
-   //         15:8 todebug  7:0 leds (the diag register, as written: 0 = lit)
+   //   probe 65:58 ddr3_rdcal   57 ddr3_cal_pass  56 ddr3_ready  55 phy_link
+   //         54 phy_present  53 phy_cfg_done  52:51 phy_speed  50 phy_fd
+   //         49:42 todebug  41:34 leds (the diag register, as written: 0 = lit)
+   //         33 disk ready  32 disk error (last)  31:0 disk blocks
+   //   (appended at the bottom, so tools/deca_reset.tcl's MSB-first offsets
+   //   of the fields above did not move)
    // ------------------------------------------------------------------
+   // The disk's last error, held: err is only meaningful with done.
+   reg blk_err_q = 1'b0;
+   always @(posedge cpu_clk)
+     if (sys_reset)         blk_err_q <= 1'b0;
+     else if (blk_rsp.done) blk_err_q <= blk_rsp.err;
+
 `ifdef SUN3_SIM
    assign jtag_reset = 1'b0;
    assign jtag_break = 1'b0;
@@ -494,7 +592,7 @@ module deca_top #(
    altsource_probe #(
        .sld_auto_instance_index ("YES"),
        .instance_id             ("SUN3"),
-       .probe_width             (32),
+       .probe_width             (66),
        .source_width            (2),
        .source_initial_value    ("0"),
        .enable_metastability    ("YES")
@@ -502,7 +600,8 @@ module deca_top #(
        .source_clk (cpu_clk),
        .probe  ({ddr3_rdcal, ddr3_cal_pass, ddr3_ready, phy_link,
                  phy_present, phy_cfg_done, phy_speed, phy_fd,
-                 todebug, leds}),
+                 todebug, leds,
+                 blk_rsp.ready, blk_err_q, blk_rsp.count}),
        .source ({jtag_break, jtag_reset})
    );
 `endif

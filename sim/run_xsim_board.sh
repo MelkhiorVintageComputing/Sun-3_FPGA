@@ -100,6 +100,9 @@ if [ "$BOARD" = deca ]; then
 	           "$top/boards/DECA/deca_jtag_console.sv" "$top/boards/DECA/deca_top.sv")
 	tb_src=("$top/tb/wb_ram_model.sv" "$top/tb/uart_monitor.sv"
 	        "$top/tb/jtag_uart_model.sv" "$top/tb/tb_deca.sv")
+	# deca_top names the block seam's types, SCSI or not.
+	"$top/tools/patch_inputs.sh" Wish5380
+	board_src=("$top/build/inputs/Wish5380/src/wish5380_pkg.sv" "${board_src[@]}")
 	tbtop=tb_deca
 else
 	board_src=("$top/rtl/sun3/reset_sync.sv" "$top/boards/Wukong/wukong_clkgen.sv"
