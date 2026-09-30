@@ -54,8 +54,12 @@ fit). On the board at 16.667 MHz: DDR3 calibrates, the stock PROM
 on the Wukong. With `ETH=1` (DP83620) NetBSD net-boots to the same FPU
 stop as on the Wukong.
 
-Step 5 (in progress): the 3/60's on-board SCSI (`rtl/sun3/sun3_si.sv`,
-`SUN3_SCSI`), its disk on the DECA's micro-SD. In simulation the PROM boots
+Step 5 (done): the 3/60's on-board SCSI (`rtl/sun3/sun3_si.sv`,
+`SUN3_SCSI`), its disk on the DECA's micro-SD. **SunOS 4.1.1 GENERIC boots
+multi-user from the card** (fsck of `sd0a`/`sd0g`, the rc daemons, `sun3
+login:`; root has no password). SunOS's getty runs the console at 7 bits +
+even parity: strip bit 7 on the host. `sync` and `halt` before reprogramming
+the FPGA, which is a power cut to the disk. In simulation the PROM boots
 `sd(0,0,0)` from the SunOS 4.1.1 image (`tb/blk_file.sv`); on the DECA
 (`ETH=1 SCSI=1`, 16.667 MHz) the PROM loads SunOS 4.1.1 from the card, whose
 kernel probes `si0 at obio 0x140000 pri 2` and `sd0: <SUN300 cyl 2398 alt 2
