@@ -66,9 +66,8 @@ kernel probes `si0 at obio 0x140000 pri 2` and `sd0: <SUN300 cyl 2398 alt 2
 hd 16 sec 16>`, then stopped with `Exception 0x7C at 0E09C19A` (in `idle`):
 the RD68021 took the monitor clock's level-7 interrupt twice when it came out
 of STOP, and the outer handler found the clock's status cleared by the inner
-one. Fixed by `patches/RD68021/0002` (reported upstream in
-`RD68021-level-7-from-STOP-taken-twice.md`, not committed); `nmiprobe`
-checks it.
+one. Reported upstream (`RD68021-level-7-from-STOP-taken-twice.md`, not
+committed) and fixed there in e9d1618; `nmiprobe` checks it.
 
 ## Commands
 
@@ -336,13 +335,13 @@ From the Sun-2 project's DECA port, which has the history of every choice.
 - The PROM's `si_reset()` waits `DELAY(10000000)` (10 s) after a SCSI bus
   reset: `fast` cuts it to 10 ms (`sun3_60_v1.9_fastboot.txt`); on the board
   it is 10 s of silence after "EEPROM boot device".
-- `patches/RD68021/0001`: Quartus builds no ROM from a case whose 12-bit
-  index has fewer than half its entries labelled (the microcode: 1906 of
-  4096), and ignores `rom_style`; built from ~4,700 LE, the path from the
-  bus unit's falling-edge `early_q` into `rom_q` (half a period) failed
-  timing by 0.9-4.3 ns depending on placement. Indexed by 11 bits plus a
-  registered bit 11: 115 LE + 26 M9K, same function. DECA with ETH+SCSI:
-  38,778 LE (78%), 65% memory, WNS +0.839 ns.
+- The RD68021's microcode store is a ROM Quartus only builds in M9K if its
+  case index is no wider than the program (upstream d1ec453: 11 bits, 1906
+  of 2048 used) and the MAX 10 configuration mode carries memory contents
+  (the ERAM mode quartus.tcl sets). Built from ~4,700 LE instead, the path
+  from the bus unit's falling-edge `early_q` into it (half a period)
+  failed timing by 0.9-4.3 ns depending on placement. DECA with ETH+SCSI
+  on RD68021 e9d1618: 38,773 LE (78%), 65% memory, WNS +0.668 ns.
 
 ## Boot PROM
 
