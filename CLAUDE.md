@@ -59,9 +59,12 @@ Step 5 (in progress): the 3/60's on-board SCSI (`rtl/sun3/sun3_si.sv`,
 `sd(0,0,0)` from the SunOS 4.1.1 image (`tb/blk_file.sv`); on the DECA
 (`ETH=1 SCSI=1`, 16.667 MHz) the PROM loads SunOS 4.1.1 from the card, whose
 kernel probes `si0 at obio 0x140000 pri 2` and `sd0: <SUN300 cyl 2398 alt 2
-hd 16 sec 16>`, then stops with `Exception 0x7C at 0E09C19A` (in `idle`):
-a level-7 interrupt reaching the monitor's handler with the clock chip's
-status already clear. Being chased.
+hd 16 sec 16>`, then stopped with `Exception 0x7C at 0E09C19A` (in `idle`):
+the RD68021 took the monitor clock's level-7 interrupt twice when it came out
+of STOP, and the outer handler found the clock's status cleared by the inner
+one. Fixed by `patches/RD68021/0002` (reported upstream in
+`RD68021-level-7-from-STOP-taken-twice.md`, not committed); `nmiprobe`
+checks it.
 
 ## Commands
 
@@ -81,7 +84,7 @@ status already clear. Being chased.
 | `make -C syn lint BOARD=deca` | Quartus analysis & synthesis of `sun3_top` alone |
 | `make -C sim board BOARD=deca CPU=rd68021` | `tb_deca` + `deca_top`, behavioural clocks and RAM, the JTAG UART modelled (`jtag.log` must equal `console.log`) |
 | `make -C sim decaddr3` / `decaconsole` | unit tests: the DDR3 adapter against BrianHG's command port, the console bridge against the JTAG UART |
-| `make -C sim xsim CPU=rd68021 SCSI=1 XSIMARGS="-testplusarg blk_image=<img>"` | with the on-board SCSI and a file as its disk (`tb/blk_file.sv`, first 32 MiB loaded) |
+| `make -C sim xsim CPU=rd68021 SCSI=1 XSIMARGS="-testplusarg blk_image=$PWD/build/disk/sunos411-sun3.img"` | with the on-board SCSI and a file as its disk (`tb/blk_file.sv`, first 32 MiB loaded). Always a copy in `build/disk/`, never the original image. Use `STOP_ON` other than `>` past the PROM: the disk label `<SUN300 ...>` has one |
 | `make -C syn bitstream BOARD=deca ETH=1 SCSI=1 [DISK_OFF_MIB=n]` | the DECA with SCSI, the disk at n MiB into the micro-SD (`tools/deca_reset.tcl` shows `disk: ready`, size) |
 
 `sim/Makefile` knobs: `CPU=suska|rd68021`, `ROM=fast|noparity|pristine`,
@@ -245,6 +248,9 @@ then `l`/`v`, then `s 5`):
   first instruction is `rts`, the handler validating it and setting FB/FC
   as NetBSD does, then RTE; prints `rteprobe PASS` when the `rts` comes
   back.
+  `nmiprobe.bin`, the same way: 20 of the monitor's level-7 clock ticks
+  taken out of `STOP #$2000`, counting handler entries and entries finding
+  the clock status clear; `nmiprobe PASS` is 20 and 0.
 - `tools/board_console.py --break` sends a BREAK (faked at 300 baud: the
   CP210x refuses `tcsendbreak`), which drops a Sun kernel into the PROM
   monitor. Not every BREAK lands; retry until "Abort at".
@@ -438,5 +444,9 @@ settles it in minutes.
   variable as the clock.
 - **Wish7990's MDIO station samples reads a cycle late** (after MDC rises);
   `patches/Wish7990/0003` carries Wish82586's fix.
+- **`tools/patch_inputs.sh` rebuilds a copy only when a source or a patch is
+  NEWER than its stamp**: removing a patch (to test without it) rebuilds
+  nothing, and the run silently uses the patched copy. Delete
+  `build/inputs/<name>/.stamp` to force it.
 - **VHDL-2008 is required** for the Suska cores (`buffer` formals on `out`
   actuals).
