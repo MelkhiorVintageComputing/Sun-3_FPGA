@@ -68,6 +68,12 @@ the RD68021 took the monitor clock's level-7 interrupt twice when it came out
 of STOP, and the outer handler found the clock's status cleared by the inner
 one. Reported upstream (`RD68021-level-7-from-STOP-taken-twice.md`, not
 committed) and fixed there in e9d1618; `nmiprobe` checks it.
+On the Wukong V3 (micro-SD slot J9, `BOARD=v3 CPU=rd68021 CPU_DIV= ETH=1
+SCSI=1`, 20 MHz, WNS +1.276 ns) the same card boots SunOS 4.1.1 multi-user,
+`le0` up at 192.168.0.121. Dhrystone 1.1 (`user` time, 50000 passes):
+1,488/s on the DECA at 16.667 MHz, 1,529/s on the Wukong at 20 MHz -- the
+memory path, not the clock, sets the pace; `-DREG=register` changes
+nothing (`cc -O` already allocates registers).
 
 ## Commands
 
@@ -88,6 +94,7 @@ committed) and fixed there in e9d1618; `nmiprobe` checks it.
 | `make -C sim board BOARD=deca CPU=rd68021` | `tb_deca` + `deca_top`, behavioural clocks and RAM, the JTAG UART modelled (`jtag.log` must equal `console.log`) |
 | `make -C sim decaddr3` / `decaconsole` | unit tests: the DDR3 adapter against BrianHG's command port, the console bridge against the JTAG UART |
 | `make -C sim xsim CPU=rd68021 SCSI=1 XSIMARGS="-testplusarg blk_image=$PWD/build/disk/sunos411-sun3.img"` | with the on-board SCSI and a file as its disk (`tb/blk_file.sv`, first 32 MiB loaded). Always a copy in `build/disk/`, never the original image. Use `STOP_ON` other than `>` past the PROM: the disk label `<SUN300 ...>` has one |
+| `make -C syn bitstream BOARD=v3 CPU=rd68021 CPU_DIV= ETH=1 SCSI=1 [DISK_OFF_MIB=n]` | the Wukong V3 with SCSI, its disk in the micro-SD slot (`syn/wukong_sd_v3.xdc`; a V1 has no slot and is refused) |
 | `make -C syn bitstream BOARD=deca ETH=1 SCSI=1 [DISK_OFF_MIB=n]` | the DECA with SCSI, the disk at n MiB into the micro-SD (`tools/deca_reset.tcl` shows `disk: ready`, size) |
 
 `sim/Makefile` knobs: `CPU=suska|rd68021`, `ROM=fast|noparity|pristine`,

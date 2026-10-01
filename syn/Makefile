@@ -43,6 +43,10 @@ CPU_DIV ?= 56
 CPU     ?= suska
 endif
 ETH     ?= 0
+# The on-board SCSI, its disk on the micro-SD (DECA; Wukong V3 only), and
+# where on the card the disk starts, in MiB.
+SCSI    ?= 0
+DISK_OFF_MIB ?= 0
 # The 3/60's on-board video memory (the PROM relies on it; see CLAUDE.md).
 FB      ?= 1
 # The board has 256 MiB; a 3/60 takes at most 24 MB, and the old build ran 16.
@@ -66,7 +70,7 @@ ROMFILE = bootrom_sun3_60_v$(ROM_VER)_$(ROM)_32bits.vh
 SYNDIR  = $(TOP)/build/syn
 IPDIR   = $(TOP)/build/ip/$(BOARD)/sun3_mig
 # Every knob that changes the bitstream is in its directory's name.
-OUTDIR  = $(SYNDIR)/vivado/$(BOARD)-$(CPU)-cpu$(CPU_MHZ_TAG)$(if $(CPU_DIV),-div$(CPU_DIV),)-$(MEM_MIB)m-v$(ROM_VER)-$(ROM)$(if $(filter 1,$(ETH)),-eth,)$(if $(filter 0,$(FB)),-nofb,)
+OUTDIR  = $(SYNDIR)/vivado/$(BOARD)-$(CPU)-cpu$(CPU_MHZ_TAG)$(if $(CPU_DIV),-div$(CPU_DIV),)-$(MEM_MIB)m-v$(ROM_VER)-$(ROM)$(if $(filter 1,$(ETH)),-eth,)$(if $(filter 0,$(FB)),-nofb,)$(if $(filter 1,$(SCSI)),-scsi$(if $(filter-out 0,$(DISK_OFF_MIB)),-off$(DISK_OFF_MIB)m),)
 BIT     = $(abspath $(OUTDIR))/sun3_wukong_$(BOARD).bit
 BIN     = $(BIT:.bit=.bin)
 WORKDIR = $(SYNDIR)/vivado/work-$(BOARD)
@@ -94,11 +98,13 @@ inputs:
 	$(TOP)/tools/patch_inputs.sh RD68021
 	$(TOP)/tools/patch_inputs.sh z8530_scc
 	$(TOP)/tools/patch_inputs.sh Wish7990
+	$(TOP)/tools/patch_inputs.sh Wish5380
 
 bitstream: ip rom inputs | $(WORKDIR)
 	cd $(WORKDIR) && $(VIVADO) -mode batch -nojournal -nolog \
 		-source $(HERE)/build.tcl -tclargs $(CPU_HZ) $(if $(CPU_DIV),$(CPU_DIV),0) \
-		$(BOARD) $(CPU) $(ETH) $(MEM_MIB) $(ROMFILE) $(ALLOW_PW) $(abspath $(OUTDIR)) $(FB)
+		$(BOARD) $(CPU) $(ETH) $(MEM_MIB) $(ROMFILE) $(ALLOW_PW) $(abspath $(OUTDIR)) $(FB) \
+		$(SCSI) $(DISK_OFF_MIB)
 	@echo "bitstream: $(BIT)"
 	@echo "flash image: $(BIN)"
 
@@ -127,8 +133,6 @@ endif  # not deca
 ifeq ($(BOARD),deca)
 CPU_DUTY  ?= 50
 BUS_TRACE ?= 1
-SCSI      ?= 0
-DISK_OFF_MIB ?= 0
 ALLOW_NEG ?= 0
 SEED      ?= 0
 JOBS      ?= 8

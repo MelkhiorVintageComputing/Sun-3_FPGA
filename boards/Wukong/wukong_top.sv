@@ -30,7 +30,10 @@ module wukong_top #(
     // Every knob is a parameter of this module: synth_design -generic reaches
     // the top level and nothing below it.
     parameter int CPU_CLK_HZ = 20_000_000,
-    parameter int CPU_DIV    = 0
+    parameter int CPU_DIV    = 0,
+    // Where the SCSI disk starts on the micro-SD card, in 512-byte sectors
+    // (syn/Makefile DISK_OFF_MIB * 2048), as on the DECA.
+    parameter int DISK_LBA_OFFSET = 0
 ) (
     input  wire        clk50,
     input  wire        cpu_reset,      // board button, active low
@@ -60,6 +63,17 @@ module wukong_top #(
     output wire        phy_reset_n,
     output wire        phy_mdc,
     inout  wire        phy_mdio,
+`endif
+
+`ifdef SUN3_SCSI
+    // The micro-SD slot (J9 on a V3; a V1 has none), in SPI mode, for the
+    // on-board SCSI's disk.  Pins in syn/wukong_sd_v3.xdc, from the Sun-2
+    // project, which ran its disk from this slot.
+    output wire        sd_clk,           // CLK
+    output wire        sd_cmd,           // CMD  -> MOSI
+    input  wire        sd_dat0,          // DAT0 -> MISO
+    output wire        sd_dat3,          // DAT3 -> /CS
+    input  wire        sd_cd,            // card detect (not read)
 `endif
 
 `ifdef BOARD_MEM_FAST
@@ -262,6 +276,40 @@ module wukong_top #(
    assign diag_leds0  = leds;
    assign extra_leds0 = todebug;
 
+`ifdef SUN3_SCSI
+   // ------------------------------------------------------------------
+   // The SCSI disk's media: the micro-SD card, in SPI mode.  blk_sd from
+   // Inputs/Wish5380 on cpu_clk (the block seam has no clock crossing), the
+   // disk DISK_LBA_OFFSET sectors into the card -- as boards/DECA/deca_top.sv.
+   // ------------------------------------------------------------------
+   wire        blk_start, blk_we;
+   wire [31:0] blk_lba;
+   wire [7:0]  blk_buf_rdata;
+   blk_rsp_t   blk_rsp;
+   blk_req_t   blk_req_media;
+   always_comb begin
+      blk_req_media.start     = blk_start;
+      blk_req_media.we        = blk_we;
+      blk_req_media.lba       = blk_lba + DISK_LBA_OFFSET[31:0];
+      blk_req_media.buf_rdata = blk_buf_rdata;
+   end
+
+   // In picoseconds, in two steps: Vivado rejects a 1e12 literal.
+   localparam int SD_CLK_PERIOD_PS = 1_000_000_000 / (CPU_CLK_HZ / 1000);
+
+   blk_sd #(.CLK_PERIOD_PS(SD_CLK_PERIOD_PS)) sdcard (
+       .clk_i     (cpu_clk),
+       .rst_i     (sys_reset),
+       .blk_i     (blk_req_media),
+       .blk_o     (blk_rsp),
+       .sd_clk_o  (sd_clk),
+       .sd_cs_n_o (sd_dat3),
+       .sd_mosi_o (sd_cmd),
+       .sd_miso_i (sd_dat0)
+   );
+   wire _unused_sd_cd = sd_cd;
+`endif
+
    sun3_top machine (
        .CLK         (cpu_clk),
        .clk4m9152   (serial_clk),
@@ -285,6 +333,19 @@ module wukong_top #(
        .phy_crs     (phy_mii_crs),
        .phy_int_n   (1'b1),
        .phy_reset_n (),              // the board's own sequencer above owns it
+`endif
+`ifdef SUN3_SCSI
+       .blk_start     (blk_start),
+       .blk_we        (blk_we),
+       .blk_lba       (blk_lba),
+       .blk_buf_rdata (blk_buf_rdata),
+       .blk_done      (blk_rsp.done),
+       .blk_err       (blk_rsp.err),
+       .blk_ready     (blk_rsp.ready),
+       .blk_count     (blk_rsp.count),
+       .blk_buf_we    (blk_rsp.buf_we),
+       .blk_buf_addr  (blk_rsp.buf_addr),
+       .blk_buf_wdata (blk_rsp.buf_wdata),
 `endif
        .V_INT       (1'b0),
        .leds        (leds),

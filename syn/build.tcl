@@ -1,7 +1,8 @@
 # Non-project Vivado build for the Sun-3 on a QMTech Wukong.
 #
 #   vivado -mode batch -source syn/build.tcl \
-#       -tclargs CPU_HZ CPU_DIV BOARD CPU ETH MEM_MIB ROMFILE ALLOW_PW OUTDIR FB
+#       -tclargs CPU_HZ CPU_DIV BOARD CPU ETH MEM_MIB ROMFILE ALLOW_PW OUTDIR FB \
+#                SCSI DISK_OFF_MIB
 #
 # Run through syn/Makefile, which owns the defaults and the output directory's
 # name (passed in, not recomputed here, so the two cannot disagree).
@@ -17,11 +18,11 @@ set top  [file normalize $here/..]
 
 source $here/boards.tcl
 
-if {[llength $argv] != 10} {
-    puts "ERROR: build.tcl wants 10 arguments (see its header), got [llength $argv]: $argv"
+if {[llength $argv] != 12} {
+    puts "ERROR: build.tcl wants 12 arguments (see its header), got [llength $argv]: $argv"
     exit 1
 }
-lassign $argv cpu_hz cpu_div board cpu eth mem_mib romfile allowpw outdir fb
+lassign $argv cpu_hz cpu_div board cpu eth mem_mib romfile allowpw outdir fb scsi disk_off_mib
 
 # CPU_DIV names the MMCM divider directly and wins over CPU_HZ in
 # wukong_clkgen.sv, so from here on cpu_hz is the clock that will exist -- it
@@ -69,9 +70,20 @@ set defines [list \
     SUN3_BOOTROM_SELECTED ]
 if {$cpu eq "rd68021"} { lappend defines SUN3_CPU_RD68021 }
 if {$eth == 1}         { lappend defines SUN3_ETH_WISH7990 }
+if {$scsi == 1} {
+    # The disk is the micro-SD slot, which only the V3 has.
+    if {![file exists $here/wukong_sd_$board.xdc]} {
+        puts "ERROR: SCSI=1 needs a micro-SD slot; BOARD=$board has none (V3 only)"
+        exit 1
+    }
+    lappend defines SUN3_SCSI
+}
 if {$fb == 0}          { lappend defines SUN3_NO_FB }
 
 puts "== Sun-3 for Wukong $board ($part), CPU $cpu at $cpu_hz Hz, $mem_mib MiB, PROM $romfile, ETH=$eth, FB=$fb =="
+if {$scsi == 1} {
+    puts "== SCSI disk at $disk_off_mib MiB on the micro-SD ([expr {$disk_off_mib * 2048}] sectors) =="
+}
 puts "== output: $outdir =="
 
 # The part before anything is read: read_ip validates against the current part,
@@ -140,13 +152,21 @@ read_verilog [list \
     $top/rtl/sun3/wish7990_sun3_regs.v \
     $top/rtl/sun3/wish7990_dvma_to_020.v ]
 
-set sv [list \
+set sv [list]
+if {$scsi == 1} {
+    # The package first: its struct types are declared at file scope.
+    set w5 $inputs/Wish5380/src
+    lappend sv $w5/wish5380_pkg.sv $w5/sci_regs.sv $w5/sci_bus.sv $w5/wish5380.sv \
+        $w5/scsi_fabric.sv $w5/scsi_targ.sv $w5/sd_spi.sv $w5/blk_sd.sv \
+        $top/rtl/sun3/sun3_si.sv
+}
+lappend sv \
     $inputs/z8530_scc/z8530_scc.sv \
     $top/rtl/sun3/reset_sync.sv \
     $top/boards/Wukong/wukong_clkgen.sv \
     $top/boards/Wukong/wb_to_mig_ui.sv \
     $top/boards/Wukong/mig_arb.sv \
-    $top/boards/Wukong/wukong_top.sv ]
+    $top/boards/Wukong/wukong_top.sv
 if {$eth == 1} {
     set w $inputs/Wish7990/src
     lappend sv \
@@ -174,6 +194,10 @@ if {$eth == 1} {
     puts "== read wukong_eth.xdc =="
 }
 read_xdc $here/wukong_wbcdc.xdc
+if {$scsi == 1} {
+    read_xdc $here/wukong_sd_$board.xdc
+    puts "== read wukong_sd_$board.xdc =="
+}
 
 # ---------------------------------------------------------------------------
 # Synthesis and implementation
@@ -190,7 +214,8 @@ synth_design -top wukong_top -part $part \
     -include_dirs [list $outdir $top/rtl/sun3 $top/build/rom] \
     -verilog_define $defines \
     -generic CPU_CLK_HZ=$cpu_hz \
-    -generic CPU_DIV=$cpu_div
+    -generic CPU_DIV=$cpu_div \
+    -generic DISK_LBA_OFFSET=[expr {$disk_off_mib * 2048}]
 
 write_checkpoint -force $outdir/post_synth.dcp
 report_utilization -file $outdir/post_synth_utilization.rpt
