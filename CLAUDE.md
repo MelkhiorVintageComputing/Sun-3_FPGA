@@ -118,6 +118,16 @@ without the FIFO bridge. The same card and binaries give:
 | `dd` 32 MiB read back | 34.9 s sys, 0:54 | 30.1 s sys, 0:53 | 17.4 s sys, 0:49 |
 | CPU clock WNS | +1.666 ns | +1.871 ns | +1.393 ns |
 
+With a 32 KiB cache (`WB_CACHE_IDX=11`): 41.5 of 135 BRAM tiles (35 at
+8 KiB), CPU clock WNS +0.926 ns (now the design's worst path). In the
+PROM boot no lookup was refused, so the page-map bits (index bits 13-14)
+arrive a clock before `MATCH_MEM` and hits still cost nothing. On the board
+it gains little over 8 KiB:
+- Dhrystone 9.3 s `user`, unchanged (it fits in 8 KiB);
+- `patwr` 5:54, 0 wrong;
+- `dd` 10.4 / 26.0 / 17.0 s sys;
+- the rc scripts 47 s against 50 s.
+
 The read cache (`WB_CACHE=1`, `SUN3_WB_CACHE`, size `WB_CACHE_IDX`,
 default 9) is `rtl/sun3/sun3_cached_fifo_bridge.v`, from the Sun-2's:
 - direct-mapped, 2**IDX lines of 16 bytes; write-through, no-allocate;
