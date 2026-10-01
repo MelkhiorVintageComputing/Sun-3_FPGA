@@ -27,6 +27,7 @@ module sun3_top(/* clock, reset */
 	   input wire 	     clk32k768,
 	   /* reset */
 	   input wire 	     sys_reset,
+	   input wire 	     trace_freeze,  // freeze the bus trace (debug; tie 0 if unused)
 	   /* serial */
 	   output wire 	     tx,
 	   input wire 	     rx,
@@ -133,6 +134,7 @@ module sun3_top(/* clock, reset */
 
 		  // System control:
 		  .P_BERR_n(BERRn),
+		  .trace_freeze(trace_freeze),
 		  .P_RESET_n(P_RESET_n),
 		  .P_HALT_n(P_HALT_n),
 
@@ -235,7 +237,11 @@ module sun3_top(/* clock, reset */
    assign RESET_INn = ~sys_reset; /* board reset => reset CPU */
    assign P_RESET_n = ~sys_reset & ~RESET_OUT; /* board reset or CPU reset => reset system */
 
-   assign HALT_INn = ~sys_reset & ~RESET_OUT; /* board reset => reset CPU (HALTn seem needed) */
+   /* Board reset => reset and halt the CPU, as U106 does from INIT- on the
+      3/60 (sheet 1).  Not the CPU's own RESET instruction: the real board
+      asserts HALT only with INIT-, and the RESET instruction cannot cause
+      INIT- (U107 never sees RESET-). */
+   assign HALT_INn = ~sys_reset;
 
 `ifndef SUN3_CPU_RD68021
    WF68K30L_TOP suska_68k30l (

@@ -20,7 +20,12 @@ module sun3_fpga(/* clock, reset */
 		 output [31:0] 	P_DATA_OUT,
 		 input 		P_DATA_EN,
 		 output 	P_BERR_n,
-		 input 		P_RESET_n, // CPU reset, not full board
+		 input 		trace_freeze, // freeze bus_trace from outside (the DECA's ISSP)
+		 input 		P_RESET_n, // the RESET- net: board reset or the CPU's RESET instruction
+		 // On the 3/60 (production schematic, Jul87) RESET- reaches only the
+		 // interrupt register (sh3 U304), the LANCE chip (sh5 U500) and the
+		 // FPU; everything else is cleared by INIT- (power-on, watchdog),
+		 // which the RESET instruction cannot cause: here, sys_reset.
 		 output 	P_HALT_n,
 		 input [2:0] 	P_FC,
 		 output 	P_AVEC_n,
@@ -425,11 +430,12 @@ module sun3_fpga(/* clock, reset */
 		      );
 
    // Diagnostic register, write-only
+   // Cleared by INIT- (sh2 U227).
    gen8bit_reg diag(.CLK(CLK),
 		    .din(EXTRACT_8BITS(SUN3_DATA_IN, SUN3_ADR_IN[1:0])),
 		    .WR(WR & MATCH_DIAG & C_S4),
 		    .dout(leds), // directly to the leds
-		    .CLR_n(1'b1)
+		    .CLR_n(~sys_reset)
 		    );
    
    // Bus Error Register, read-only
@@ -534,6 +540,7 @@ module sun3_fpga(/* clock, reset */
 		      .BERR(~P_BERR_n),
 		      .DVMA(ethernet_dma_active),
 		      .CYCLES(cyctr_out),
+		      .FREEZE(trace_freeze),
 		      .REARM(WR & MATCH_FLTLOG & C_S4 & (SUN3_ADR_IN[13:12] == 2'b01)),
 		      .REARM_DATA(SUN3_DATA_IN),
 		      .RD_ADR(SUN3_ADR_IN[12:2]),
@@ -690,6 +697,13 @@ module sun3_fpga(/* clock, reset */
    assign tx = TxDA;
    assign RxDA = rx;
 
+   // Both SCCs are reset on RESET- (P_RESET_n), the CPU's RESET instruction
+   // included, although the production schematic seems to show their RD/WR
+   // decode PAL (sh3 U311) taking INIT- only: otherwise the PROM's `k2' after
+   // SunOS hangs.  SunOS leaves the console SCC with its interrupts and MIE
+   // enabled; after the RESET, self test 9 enables interrupts expecting a soft
+   // level 1, takes the SCC's level 6 instead, and loops (diag 0x89).
+   // tools/beprobe/sccie.S reproduces it in simulation.
    z8530_scc  #(.SOFT_RESET_EN(1),
 		.RR8_CTRL_POP(1),
 		.BRG_SRC_A(1),
@@ -707,8 +721,10 @@ module sun3_fpga(/* clock, reset */
 			  
 			  // CPU Interface
 			  .cs_n(1'b0),          // Chip select (active low)
-			  .rd_n(((~MATCH_SERIAL & ~MATCH_UARTBYP) | ~RD) & ~sys_reset),          // Read strobe (active low)
-			  .wr_n(((~MATCH_SERIAL & ~MATCH_UARTBYP) | ~WR) & ~sys_reset),          // Write strobe (active low)
+			  // RD and WR low together reset the Z8530, on RESET- (the
+			  // CPU's RESET instruction too), not just INIT-: see below.
+			  .rd_n(((~MATCH_SERIAL & ~MATCH_UARTBYP) | ~RD) & P_RESET_n),          // Read strobe (active low)
+			  .wr_n(((~MATCH_SERIAL & ~MATCH_UARTBYP) | ~WR) & P_RESET_n),          // Write strobe (active low)
 			  .a_b(SUN3_ADR_IN[2]),           // Channel select: 1=A, 0=B
 			  .d_c(SUN3_ADR_IN[1]),           // Data/Control: 1=Data, 0=Control
 			  .data_in(EXTRACT_8BITS(SUN3_DATA_IN, SUN3_ADR_IN[1:0])),       // Data input
@@ -764,8 +780,8 @@ module sun3_fpga(/* clock, reset */
 			 .reset_n(1'b1),
 
 			 .cs_n(1'b0),
-			 .rd_n((~MATCH_KBDMS | ~RD) & ~sys_reset),
-			 .wr_n((~MATCH_KBDMS | ~WR) & ~sys_reset),
+			 .rd_n((~MATCH_KBDMS | ~RD) & P_RESET_n),
+			 .wr_n((~MATCH_KBDMS | ~WR) & P_RESET_n),
 			 .a_b(SUN3_ADR_IN[2]),
 			 .d_c(SUN3_ADR_IN[1]),
 			 .data_in(EXTRACT_8BITS(SUN3_DATA_IN, SUN3_ADR_IN[1:0])),
@@ -1021,7 +1037,9 @@ module sun3_fpga(/* clock, reset */
 
    wish7990_sun3_regs regs_to_eth (
 				   .CLK        (CLK),
-				   .RESET_n    (P_RESET_n),
+				   // The Ethernet's board latch (sh5 U520) is never
+				   // reset on a 3/60; INIT- here.
+				   .RESET_n    (~sys_reset),
 				   .P_ADR_IN   ({ma_pmap2devices[18:0], SUN3_ADR_IN[12:0]}), // full physical
 				   .P_DATA_IN  (SUN3_DATA_IN),
 				   .P_DATA_OUT (ethernet_out),
@@ -1054,10 +1072,12 @@ module sun3_fpga(/* clock, reset */
 	      .POLL_TICKS (WISH7990_POLL_TICKS)
 	      ) ethernet (
 				   .clk        (CLK),
-				   .rst        (~P_RESET_n),
-				   // The part's own RESET pin, which a Sun ties
-				   // to the system reset.  It leaves the chip
-				   // stopped, which is where a LANCE comes up.
+				   .rst        (sys_reset),
+				   // The part's own RESET pin, on RESET- (sh5
+				   // U500 pin 23): the CPU's RESET instruction
+				   // stops the chip, as a STOP would.  The rest of
+				   // the module (its bus master, MAC) only on
+				   // system reset.
 				   .reset_i    (~P_RESET_n),
 				   .cs_i       (wish_cs),
 				   .adr_i      (wish_adr),
@@ -1098,7 +1118,9 @@ module sun3_fpga(/* clock, reset */
    // it: the C-LANCE predates MDIO and none of its drivers knows a PHY
    // exists, so it is left to auto-negotiate or to whatever drives MDIO
    // outside this module.
-   assign phy_reset_n = P_RESET_n;
+   // No PHY on a 3/60: only the system reset, so a RESET instruction does
+   // not drop the link.
+   assign phy_reset_n = ~sys_reset;
 
 `endif //  `ifdef SUN3_ETH_WISH7990
 
@@ -1124,8 +1146,9 @@ module sun3_fpga(/* clock, reset */
    wire [29:0] 	       dv_adr;
    wire [31:0] 	       dv_dat_w, dv_dat_r;
 
+   // The DVMA arbiter is cleared by INIT- only (sh1 U131).
    always @(posedge CLK)
-     if (~P_RESET_n)
+     if (sys_reset)
        begin
 	  dv_busy <= 1'b0;
 	  dv_si   <= 1'b0;
@@ -1166,7 +1189,7 @@ module sun3_fpga(/* clock, reset */
 
    wish7990_dvma_to_020 dvma_bridge (
 				   .clk         (CLK),
-				   .reset_n     (P_RESET_n),
+				   .reset_n     (~sys_reset),
 				   .wb_cyc_i    (dv_cyc),
 				   .wb_stb_i    (dv_stb),
 				   .wb_we_i     (dv_we),
@@ -1202,7 +1225,9 @@ module sun3_fpga(/* clock, reset */
    // ---- the on-board SCSI (OBIO 0x140000) ------------------------------------
    sun3_si #(.CLK_PERIOD_PS(1000000000 / (`SUN3_CPU_HZ / 1000))) scsi (
        .clk        (CLK),
-       .rst        (~P_RESET_n),
+       // The SCSI board logic (CSR, sh6 U620) is cleared by INIT- only;
+       // the 5380 and the UDC are held in reset by its bit 0 from then.
+       .rst        (sys_reset),
        .match      (MATCH_SCSI),
        .rw_n       (SUN3_RW_n),
        .adr        (SUN3_ADR_IN[4:0]),

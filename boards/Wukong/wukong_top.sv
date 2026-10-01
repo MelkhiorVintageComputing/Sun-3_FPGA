@@ -340,6 +340,7 @@ module wukong_top #(
        .clk4m9152   (serial_clk),
        .clk32k768   (1'b0),          // unused inside (the TOD runs on CLK)
        .sys_reset   (sys_reset),
+       .trace_freeze (1'b0),
        .tx          (serial_tx),
        .rx          (serial_rx),
        .kbd_tx      (),
