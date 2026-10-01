@@ -68,7 +68,7 @@ module tb_wukong #(
    wire [31:0] wb_dat_m2s, wb_dat_s2m;
    wire [3:0]  wb_sel;
    wire        cpu_clk, sys_reset;
-   wire [127:0] wb_line_unused;
+   wire [127:0] wb_line;
 
    wukong_top #(.CPU_CLK_HZ(CPU_CLK_HZ)) dut (
        .clk50 (clk50), .cpu_reset (cpu_reset),
@@ -78,7 +78,7 @@ module tb_wukong #(
 
        .wb_cyc_o (wb_cyc), .wb_stb_o (wb_stb), .wb_adr_o (wb_adr),
        .wb_dat_o (wb_dat_m2s), .wb_sel_o (wb_sel), .wb_we_o (wb_we),
-       .wb_dat_i (wb_dat_s2m), .wb_ack_i (wb_ack),
+       .wb_dat_i (wb_dat_s2m), .wb_ack_i (wb_ack), .wb_line_i (wb_line),
        .cpu_clk_o (cpu_clk), .sys_reset_o (sys_reset)
    );
 
@@ -86,7 +86,7 @@ module tb_wukong #(
        .clk (cpu_clk), .reset (sys_reset),
        .wb_cyc_i (wb_cyc), .wb_stb_i (wb_stb), .wb_adr_i (wb_adr),
        .wb_dat_i (wb_dat_m2s), .wb_sel_i (wb_sel), .wb_we_i (wb_we),
-       .wb_dat_o (wb_dat_s2m), .wb_ack_o (wb_ack), .wb_line_o (wb_line_unused)
+       .wb_dat_o (wb_dat_s2m), .wb_ack_o (wb_ack), .wb_line_o (wb_line)
    );
 
 `else

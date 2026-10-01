@@ -2,7 +2,7 @@
 #
 #   vivado -mode batch -source syn/build.tcl \
 #       -tclargs CPU_HZ CPU_DIV BOARD CPU ETH MEM_MIB ROMFILE ALLOW_PW OUTDIR FB \
-#                SCSI DISK_OFF_MIB
+#                SCSI DISK_OFF_MIB WB_FIFO WB_CACHE WB_CACHE_IDX
 #
 # Run through syn/Makefile, which owns the defaults and the output directory's
 # name (passed in, not recomputed here, so the two cannot disagree).
@@ -18,11 +18,11 @@ set top  [file normalize $here/..]
 
 source $here/boards.tcl
 
-if {[llength $argv] != 12} {
-    puts "ERROR: build.tcl wants 12 arguments (see its header), got [llength $argv]: $argv"
+if {[llength $argv] != 15} {
+    puts "ERROR: build.tcl wants 15 arguments (see its header), got [llength $argv]: $argv"
     exit 1
 }
-lassign $argv cpu_hz cpu_div board cpu eth mem_mib romfile allowpw outdir fb scsi disk_off_mib
+lassign $argv cpu_hz cpu_div board cpu eth mem_mib romfile allowpw outdir fb scsi disk_off_mib wb_fifo wb_cache wb_cache_idx
 
 # CPU_DIV names the MMCM divider directly and wins over CPU_HZ in
 # wukong_clkgen.sv, so from here on cpu_hz is the clock that will exist -- it
@@ -79,8 +79,19 @@ if {$scsi == 1} {
     lappend defines SUN3_SCSI
 }
 if {$fb == 0}          { lappend defines SUN3_NO_FB }
+# The FIFO bridge: its Wishbone side on MIG's ui_clk, wb_mig_sync in place of
+# wb_to_mig_ui.
+if {$wb_fifo == 1}     { lappend defines SUN3_WB_FIFO }
+# The read cache in front of the FIFO bridge, which it needs.
+if {$wb_cache == 1} {
+    if {$wb_fifo != 1} {
+        puts "ERROR: WB_CACHE=1 needs WB_FIFO=1: the cache sits in front of the FIFO bridge"
+        exit 1
+    }
+    lappend defines SUN3_WB_CACHE SUN3_WB_CACHE_IDX=$wb_cache_idx
+}
 
-puts "== Sun-3 for Wukong $board ($part), CPU $cpu at $cpu_hz Hz, $mem_mib MiB, PROM $romfile, ETH=$eth, FB=$fb =="
+puts "== Sun-3 for Wukong $board ($part), CPU $cpu at $cpu_hz Hz, $mem_mib MiB, PROM $romfile, ETH=$eth, FB=$fb, WB_FIFO=$wb_fifo, WB_CACHE=$wb_cache (IDX $wb_cache_idx) =="
 if {$scsi == 1} {
     puts "== SCSI disk at $disk_off_mib MiB on the micro-SD ([expr {$disk_off_mib * 2048}] sectors) =="
 }
@@ -150,7 +161,10 @@ read_verilog [list \
     $top/rtl/sun3/fault_log.v \
     $top/rtl/sun3/bus_trace.v \
     $top/rtl/sun3/wish7990_sun3_regs.v \
-    $top/rtl/sun3/wish7990_dvma_to_020.v ]
+    $top/rtl/sun3/wish7990_dvma_to_020.v \
+    $top/rtl/sun3/sun3_async_fifo.v \
+    $top/rtl/sun3/sun3_fifo_bridge.v \
+    $top/rtl/sun3/sun3_cached_fifo_bridge.v ]
 
 set sv [list]
 if {$scsi == 1} {
@@ -165,6 +179,7 @@ lappend sv \
     $top/rtl/sun3/reset_sync.sv \
     $top/boards/Wukong/wukong_clkgen.sv \
     $top/boards/Wukong/wb_to_mig_ui.sv \
+    $top/boards/Wukong/wb_mig_sync.sv \
     $top/boards/Wukong/mig_arb.sv \
     $top/boards/Wukong/wukong_top.sv
 if {$eth == 1} {
@@ -193,7 +208,13 @@ if {$eth == 1} {
     read_xdc $here/wukong_eth.xdc
     puts "== read wukong_eth.xdc =="
 }
-read_xdc $here/wukong_wbcdc.xdc
+if {$wb_fifo == 1} {
+    read_xdc $here/wukong_wbfifo.xdc
+    puts "== read wukong_wbfifo.xdc =="
+} else {
+    read_xdc $here/wukong_wbcdc.xdc
+    puts "== read wukong_wbcdc.xdc =="
+}
 if {$scsi == 1} {
     read_xdc $here/wukong_sd_$board.xdc
     puts "== read wukong_sd_$board.xdc =="
@@ -209,6 +230,9 @@ puts "== defines: $defines =="
 # An undeclared identifier is an error, not a one-bit undriven wire: that is
 # how the Sun-2's frame buffer reached the board dead.
 set_msg_config -id {Synth 8-6901} -new_severity ERROR
+# An XDC command Vivado does not support drops the whole constraint with only
+# a critical warning (a `concat' once took the clock groups with it).
+set_msg_config -id {Designutils 20-1307} -new_severity ERROR
 
 synth_design -top wukong_top -part $part \
     -include_dirs [list $outdir $top/rtl/sun3 $top/build/rom] \
@@ -226,7 +250,26 @@ if {$eth == 1 && [llength [get_cells -quiet -hier -filter {NAME =~ *mdio_station
     puts "ERROR: ETH=1 but the netlist has no MDIO station: SUN3_ETH_WISH7990 did not reach the RTL"
     exit 1
 }
-if {[llength [get_cells -quiet -hier -filter {NAME =~ *adapter/req_tgl_reg*}]] == 0} {
+if {$wb_fifo == 1} {
+    # wukong_wbfifo.xdc bounds the FIFO bridge's crossings by pattern, and a
+    # pattern that matches nothing turns its constraint into a warning.
+    foreach f {req_fifo rsp_fifo} {
+        foreach c {wgray_reg[*] wgray_r1_reg[*] rgray_reg[*] rgray_w1_reg[*] mem_reg*} {
+            set n [llength [get_cells -quiet -hier -filter "NAME =~ *wbridge/$f/$c"]]
+            if {$n == 0} {
+                puts "ERROR: wukong_wbfifo.xdc: *wbridge/$f/$c matches no cells -- its constraint is not applied"
+                exit 1
+            }
+            puts "== wbfifo xdc: $f/$c matches $n cells =="
+        }
+    }
+    foreach c {wbrst_s_reg[0] cpurst_s_reg[0]} {
+        if {[llength [get_cells -quiet -hier -filter "NAME =~ *wbridge/$c"]] == 0} {
+            puts "ERROR: wukong_wbfifo.xdc: *wbridge/$c matches no cell"
+            exit 1
+        }
+    }
+} elseif {[llength [get_cells -quiet -hier -filter {NAME =~ *adapter/req_tgl_reg*}]] == 0} {
     puts "ERROR: adapter/req_tgl_reg matches no cell: wukong_wbcdc.xdc constrains nothing"
     exit 1
 }

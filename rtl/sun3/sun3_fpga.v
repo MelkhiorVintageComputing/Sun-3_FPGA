@@ -95,6 +95,14 @@ module sun3_fpga(/* clock, reset */
 		 output 	wb_we_o,
 		 input [31:0] 	wb_dat_i,
 		 input 		wb_ack_i
+`ifdef SUN3_WB_FIFO
+		 ,
+		 input 		wb_clk_i,
+		 input 		wb_rst_i,
+		 // the whole 128-bit line a read brought back, valid with
+		 // wb_ack_i; only the cached bridge (SUN3_WB_CACHE) reads it
+		 input [127:0] 	wb_line_i
+`endif
 		 );
 
    // Byte-wide devices on the 32-bit bus.
@@ -626,7 +634,24 @@ module sun3_fpga(/* clock, reset */
    wire [31:0] 			 wishbone_out;
    wire 			 w_ack;
    
+   // The memory bridge: synchronous (DSACK waits for the Wishbone answer), or
+   // with SUN3_WB_FIFO two dual-clock FIFOs, posted writes and tagged reads,
+   // the Wishbone side in the memory controller's clock (sun3_fifo_bridge.v).
+   // SUN3_WB_CACHE puts a read cache in front of those FIFOs
+   // (sun3_cached_fifo_bridge.v).
+   // Same instance name every way: the board constraints name it.
+`ifdef SUN3_WB_CACHE
+   sun3_cached_fifo_bridge #(.IDX(`SUN3_WB_CACHE_IDX)) wbridge(.CLK(CLK),
+				.WB_CLK(wb_clk_i),
+				.WB_RESET(wb_rst_i),
+				.wb_line_i(wb_line_i),
+`elsif SUN3_WB_FIFO
+   sun3_fifo_bridge wbridge(.CLK(CLK),
+				.WB_CLK(wb_clk_i),
+				.WB_RESET(wb_rst_i),
+`else
    sun3_wishbone_bridge wbridge(.CLK(CLK),
+`endif
 				.RESET_n(~sys_reset), // don't reset on CPU-only reset, don't want to loose memory access then
 				.P_ADR_IN({ma_pmap2devices[18:0], SUN3_ADR_IN[12:0]}), // full physical
 				.P_DATA_IN(SUN3_DATA_IN),

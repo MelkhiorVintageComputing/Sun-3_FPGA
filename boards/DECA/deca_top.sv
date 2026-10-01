@@ -18,6 +18,10 @@
 //
 //   sun3_top --Wishbone (cpu_clk)-- deca_wb_to_ddr3 --(CMD_CLK)-- BrianHG -- DDR3
 //
+// or, with SUN3_WB_FIFO, the crossing inside the machine's FIFO bridge:
+//
+//   sun3_top --Wishbone (CMD_CLK)-- deca_wb_ddr3_sync -- BrianHG -- DDR3
+//
 // What differs from the Wukong:
 //  * No UART reaches the FPGA.  The console is the SCC's ttya bridged to a
 //    JTAG UART on the USB-Blaster II (deca_jtag_console); its TX also goes out
@@ -113,6 +117,7 @@ module deca_top #(
     output wire        wb_we_o,
     input  wire [31:0] wb_dat_i,
     input  wire        wb_ack_i,
+    input  wire [127:0] wb_line_i,     // the read's whole line (cached bridge)
     output wire        cpu_clk_o,
     output wire        sys_reset_o
 `else
@@ -211,6 +216,24 @@ module deca_top #(
    wire [29:0] wb_adr;
    wire [31:0] wb_dat_m2s, wb_dat_s2m;
    wire [3:0]  wb_sel;
+   wire [127:0] wb_line_s2m;          // the read's whole line, for the cached bridge
+
+   // The Wishbone port's clock.  The synchronous bridge runs it on cpu_clk and
+   // deca_wb_to_ddr3 crosses to CMD_CLK; the FIFO bridge (SUN3_WB_FIFO) crosses
+   // inside itself and runs the port on CMD_CLK, so deca_wb_ddr3_sync needs no
+   // crossing.  cmd_clk is declared here, ahead of its first use, for xvlog.
+`ifndef BOARD_MEM_FAST
+   wire cmd_clk, ddr3_rst_out;
+`endif
+`ifdef SUN3_WB_FIFO
+ `ifdef BOARD_MEM_FAST
+   wire wb_side_clk = cpu_clk;
+   wire wb_side_rst = sys_reset;
+ `else
+   wire wb_side_clk = cmd_clk;
+   wire wb_side_rst = ddr3_rst_out;
+ `endif
+`endif
    wire [7:0]  leds, todebug;
    wire        en_boot;
    wire        sun_tx, sun_rx;
@@ -272,6 +295,12 @@ module deca_top #(
        .wb_we_o     (wb_we),
        .wb_dat_i    (wb_dat_s2m),
        .wb_ack_i    (wb_ack)
+`ifdef SUN3_WB_FIFO
+       ,
+       .wb_clk_i    (wb_side_clk),
+       .wb_rst_i    (wb_side_rst),
+       .wb_line_i   (wb_line_s2m)
+`endif
    );
 
    // ------------------------------------------------------------------
@@ -290,6 +319,7 @@ module deca_top #(
    assign wb_we_o     = wb_we;
    assign wb_dat_s2m  = wb_dat_i;
    assign wb_ack      = wb_ack_i;
+   assign wb_line_s2m = wb_line_i;
    assign cpu_clk_o   = cpu_clk;
    assign sys_reset_o = sys_reset;
    assign ddr3_ready    = 1'b1;       // nothing to calibrate
@@ -303,7 +333,6 @@ module deca_top #(
    localparam int PORT_ADDR_SIZE  = 29;    // byte address: 512 MB
    localparam int PORT_CACHE_BITS = 128;
 
-   wire                         cmd_clk, ddr3_rst_out;
    wire                         cmd_busy_a      [0:0];
    wire                         cmd_ena_a       [0:0];
    wire                         cmd_write_ena_a [0:0];
@@ -314,6 +343,25 @@ module deca_top #(
    wire [PORT_CACHE_BITS-1:0]   cmd_rdata_a     [0:0];
    wire [7:0]                   cmd_rvec_out_a  [0:0];
 
+`ifdef SUN3_WB_FIFO
+   deca_wb_ddr3_sync #(.PORT_ADDR_SIZE(PORT_ADDR_SIZE),
+                       .PORT_CACHE_BITS(PORT_CACHE_BITS)) memif_sync (
+       .cmd_clk        (cmd_clk),
+       .cmd_rst        (ddr3_rst_out),
+       .ddr3_ready     (ddr3_ready),
+       .wb_cyc_i (wb_cyc), .wb_stb_i (wb_stb), .wb_adr_i (wb_adr),
+       .wb_dat_i (wb_dat_m2s), .wb_sel_i (wb_sel), .wb_we_i (wb_we),
+       .wb_dat_o (wb_dat_s2m), .wb_ack_o (wb_ack), .wb_line_o (wb_line_s2m),
+       .CMD_busy       (cmd_busy_a[0]),
+       .CMD_ena        (cmd_ena_a[0]),
+       .CMD_write_ena  (cmd_write_ena_a[0]),
+       .CMD_addr       (cmd_addr_a[0]),
+       .CMD_wdata      (cmd_wdata_a[0]),
+       .CMD_wmask      (cmd_wmask_a[0]),
+       .CMD_read_ready (cmd_rready_a[0]),
+       .CMD_read_data  (cmd_rdata_a[0])
+   );
+`else
    deca_wb_to_ddr3 #(.PORT_ADDR_SIZE(PORT_ADDR_SIZE),
                      .PORT_CACHE_BITS(PORT_CACHE_BITS)) memif (
        .clk_wb   (cpu_clk),
@@ -339,6 +387,7 @@ module deca_top #(
        .CMD_read_ready (cmd_rready_a[0]),
        .CMD_read_data  (cmd_rdata_a[0])
    );
+`endif
 
    BrianHG_DDR3_CONTROLLER_v16_top #(
        .FPGA_VENDOR     ("Altera"),

@@ -22,6 +22,8 @@
 #   -bus_trace 0 | 1                 the on-chip bus trace (8 M9K)
 #   -scsi      0 | 1                 the on-board SCSI, its disk on the micro-SD
 #   -disk_off_mib <n>                where on the card the disk starts, MiB
+#   -wb_fifo   0 | 1                 the FIFO memory bridge, its Wishbone side on CMD_CLK
+#   -wb_cache  0 | 1  -wb_cache_idx <n>   its read cache, 2**n lines of 16 bytes
 #   -mem_mib   <n>                   main memory
 #   -romfile   <name>                the PROM, from build/rom/
 #   -eram      0 | 1                 see below; 1 for any real build
@@ -50,6 +52,9 @@ array set opt {
     -bus_trace 1
     -scsi      0
     -disk_off_mib 0
+    -wb_fifo   1
+    -wb_cache  1
+    -wb_cache_idx 9
     -mem_mib   16
     -romfile   bootrom_sun3_60_v1.9_noparity_32bits.vh
     -eram      1
@@ -100,9 +105,17 @@ if {$opt(-eth) == 1}       { lappend defines SUN3_ETH_WISH7990 }
 if {$opt(-fb) == 0}        { lappend defines SUN3_NO_FB }
 if {$opt(-bus_trace) == 0} { lappend defines SUN3_NO_BUS_TRACE }
 if {$opt(-scsi) == 1}      { lappend defines SUN3_SCSI }
+if {$opt(-wb_fifo) == 1}   { lappend defines SUN3_WB_FIFO }
+if {$opt(-wb_cache) == 1} {
+    if {$opt(-wb_fifo) != 1} {
+        puts "ERROR: -wb_cache 1 needs -wb_fifo 1: the cache sits in front of the FIFO bridge"
+        exit 1
+    }
+    lappend defines SUN3_WB_CACHE SUN3_WB_CACHE_IDX=$opt(-wb_cache_idx)
+}
 
 puts "== Sun-3 for [board_family $opt(-board)] [board_device $opt(-board)], entity $opt(-topent) =="
-puts "== CPU $opt(-cpu) at $opt(-cpu_hz) Hz[expr {$opt(-cpu_div) ? " (VCO/$opt(-cpu_div))" : ""}], duty $opt(-cpu_duty)%, $opt(-mem_mib) MiB, PROM $opt(-romfile), ETH=$opt(-eth), FB=$opt(-fb) =="
+puts "== CPU $opt(-cpu) at $opt(-cpu_hz) Hz[expr {$opt(-cpu_div) ? " (VCO/$opt(-cpu_div))" : ""}], duty $opt(-cpu_duty)%, $opt(-mem_mib) MiB, PROM $opt(-romfile), ETH=$opt(-eth), FB=$opt(-fb), WB_FIFO=$opt(-wb_fifo), WB_CACHE=$opt(-wb_cache) (IDX $opt(-wb_cache_idx)) =="
 if {$opt(-scsi) == 1} {
     puts "== SCSI disk at $opt(-disk_off_mib) MiB on the micro-SD ([expr {$opt(-disk_off_mib) * 2048}] sectors) =="
 }
@@ -210,6 +223,9 @@ set v2001 [list \
     $top/rtl/sun3/eeprom.v \
     $top/rtl/sun3/sun3_irq_priority.v \
     $top/rtl/sun3/sun3_wishbone_bridge.v \
+    $top/rtl/sun3/sun3_async_fifo.v \
+    $top/rtl/sun3/sun3_fifo_bridge.v \
+    $top/rtl/sun3/sun3_cached_fifo_bridge.v \
     $top/rtl/sun3/fault_log.v \
     $top/rtl/sun3/bus_trace.v \
     $top/rtl/sun3/wish7990_sun3_regs.v \

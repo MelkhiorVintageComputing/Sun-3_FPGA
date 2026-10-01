@@ -62,6 +62,18 @@ romfile="bootrom_sun3_60_v${romver}_${rom}_32bits.vh"
 # the name.
 tag="$cpu-v$romver-$rom-${mem}m-$eth"
 [ "$scsi" = 1 ] && tag="$tag-scsi"
+wbfifo=${SUN3_WB_FIFO:-1}
+[ "$wbfifo" = 1 ] && tag="$tag-wbfifo"
+wbcache=${SUN3_WB_CACHE:-$wbfifo}
+wbcacheidx=${SUN3_WB_CACHE_IDX:-9}
+if [ "$wbcache" = 1 ]; then
+	if [ "$wbfifo" != 1 ]; then
+		echo "WB_CACHE=1 needs WB_FIFO=1: the cache sits in front of the FIFO bridge" >&2
+		exit 1
+	fi
+	tag="$tag-wbcache"
+	[ "$wbcacheidx" != 9 ] && tag="$tag$wbcacheidx"
+fi
 [ "$lat" != 0 ] && tag="$tag-lat$lat"
 [ "$fill" != 00000000 ] && tag="$tag-fill$fill"
 [ "$hz" != 20000000 ] && tag="$tag-cpu$((hz / 1000000))"
@@ -84,6 +96,8 @@ wish7990) defargs+=(-d SUN3_ETH_WISH7990) ;;
 *) echo "SUN3_ETH must be none or wish7990, not '$eth'" >&2; exit 1 ;;
 esac
 [ "$scsi" = 1 ] && defargs+=(-d SUN3_SCSI)
+[ "$wbfifo" = 1 ] && defargs+=(-d SUN3_WB_FIFO)
+[ "$wbcache" = 1 ] && defargs+=(-d SUN3_WB_CACHE -d "SUN3_WB_CACHE_IDX=$wbcacheidx")
 for d in $SUN3_DEFINES; do
 	defargs+=(-d "$d")
 done

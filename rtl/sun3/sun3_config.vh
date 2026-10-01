@@ -12,6 +12,17 @@
 //                        target, an Am9516 subset), at OBIO 0x140000, with the
 //                        disk's block seam brought out to the board
 //   SUN3_HAS_DVMA        derived, not set: a DVMA master exists (either of the two)
+//   SUN3_WB_FIFO         the memory bridge through two dual-clock FIFOs
+//                        (sun3_fifo_bridge.v): writes acknowledged when queued,
+//                        reads matched by tag, the Wishbone side on its own
+//                        clock (sun3_top's wb_clk_i / wb_rst_i); otherwise the
+//                        synchronous sun3_wishbone_bridge
+//   SUN3_WB_CACHE        with SUN3_WB_FIFO: a direct-mapped, write-through,
+//                        no-allocate read cache of 16-byte lines in front of
+//                        the FIFOs (sun3_cached_fifo_bridge.v); a read miss
+//                        brings back the whole line (sun3_top's wb_line_i)
+//   SUN3_WB_CACHE_IDX    its size: 2**IDX lines (default 9: 8 KiB, the largest
+//                        whose index is all page offset, see the bridge)
 //   SUN3_FB              the on-board bw2 video memory, at the top of DDR3
 //                        (on unless SUN3_NO_FB).  Every real 3/60 has it and the PROM assumes it
 //                        (without it the monitor's `h' draws into an
@@ -35,6 +46,12 @@
 
 `ifndef SUN3_CPU_HZ
  `define SUN3_CPU_HZ 20000000
+`endif
+
+// SUN3_WB_CACHE without SUN3_WB_FIFO is refused by the sim and syn scripts
+// (Verilog has no portable `error).
+`ifndef SUN3_WB_CACHE_IDX
+ `define SUN3_WB_CACHE_IDX 9
 `endif
 
 `ifndef SUN3_MEM_MIB

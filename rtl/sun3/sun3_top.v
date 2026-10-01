@@ -80,6 +80,14 @@ module sun3_top(/* clock, reset */
 	   output wire 	      wb_we_o,
 	   input wire [31:0]  wb_dat_i,
 	   input wire 	      wb_ack_i
+`ifdef SUN3_WB_FIFO
+	   ,
+	   /* the Wishbone side's own clock and reset (the memory controller's) */
+	   input wire 	      wb_clk_i,
+	   input wire 	      wb_rst_i,
+	   /* the read's whole 128-bit line, for the cached bridge (SUN3_WB_CACHE) */
+	   input wire [127:0] wb_line_i
+`endif
 	   );
    wire [31:0] ADR_OUT;
    wire [31:0] DATA_IN;
@@ -211,6 +219,12 @@ module sun3_top(/* clock, reset */
 		  .wb_we_o(wb_we_o),
 		  .wb_dat_i(wb_dat_i),
 		  .wb_ack_i(wb_ack_i)
+`ifdef SUN3_WB_FIFO
+		  ,
+		  .wb_clk_i(wb_clk_i),
+		  .wb_rst_i(wb_rst_i),
+		  .wb_line_i(wb_line_i)
+`endif
 		  );
 
    wire        RESET_INn;
