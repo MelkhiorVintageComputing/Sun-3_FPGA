@@ -74,6 +74,18 @@ SCSI=1`, 20 MHz, WNS +1.276 ns) the same card boots SunOS 4.1.1 multi-user,
 1,488/s on the DECA at 16.667 MHz, 1,529/s on the Wukong at 20 MHz -- the
 memory path, not the clock, sets the pace; `-DREG=register` changes
 nothing (`cc -O` already allocates registers).
+The RD68021 on the V3 (-1) goes well past 20 MHz (`CPU_DIV`, VCO 1 GHz);
+each row booted SunOS from the card, answered pings and ran a clean
+`patwr` pass (32 MiB file on `/usr`, 0 of 16,777,216 words wrong):
+
+| clock | `CPU_DIV` | CPU clock WNS / WHS | Dhrystone 1.1 (`user`) | `patwr` |
+|---|---|---|---|---|
+| 20 MHz | (none) | (+1.28 overall) | 1,529/s | 14:56 |
+| 25 MHz | 40 | +3.557 / +0.052 ns | (built, not run) | |
+| 31.25 MHz | 32 | +1.930 / +0.056 ns | 2,083/s | 10:51 |
+| 33.33 MHz | 30 | +1.666 / +0.035 ns | 2,165/s | 10:25 |
+
+The design's worst path (+1.276 ns) is outside the CPU clock throughout.
 
 ## Commands
 
