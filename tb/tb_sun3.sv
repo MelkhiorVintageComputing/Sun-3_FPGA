@@ -90,6 +90,8 @@ module tb_sun3 #(
    wire        phy_tx_en, phy_tx_er, phy_reset_n;
 `endif
 
+   wire [127:0] wb_line;          // the read's whole line, for the cached bridge
+
 `ifdef SUN3_WB_FIFO
    // The FIFO bridge's Wishbone side runs in the memory controller's clock:
    // MIG's ui_clk on the Wukong, 83.33 MHz, stood in for here (MEM_LATENCY
@@ -172,12 +174,12 @@ module tb_sun3 #(
 `ifdef SUN3_WB_FIFO
       ,
       .wb_clk_i    (wb_clk),
-      .wb_rst_i    (wb_rst)
+      .wb_rst_i    (wb_rst),
+      .wb_line_i   (wb_line)
 `endif
    );
 
    // ---- main memory -------------------------------------------------------
-   wire [127:0] wb_line_unused;
 
    wb_ram_model #(.ACK_LATENCY(MEM_LATENCY), .FILL(MEM_FILL)) mem (
       .clk      (mem_clk),
@@ -190,7 +192,7 @@ module tb_sun3 #(
       .wb_we_i  (wb_we),
       .wb_dat_o (wb_dat_r),
       .wb_ack_o (wb_ack),
-      .wb_line_o(wb_line_unused)
+      .wb_line_o(wb_line)
    );
 
    // ---- console -----------------------------------------------------------
@@ -312,6 +314,13 @@ module tb_sun3 #(
       $display("last PROM access at %08x, diag LEDs %02x", last_prom_adr, ~leds);
       console_mon.report();
       mem.report();
+`ifdef SUN3_WB_CACHE
+      $display("[cache] %0d lines: reads %0d hit, %0d miss (%0d lookups not usable), %0d uncached; writes %0d hit, %0d miss, %0d invalidated; %0d fills",
+               1 << `SUN3_WB_CACHE_IDX, dut.sun3.wbridge.n_hit, dut.sun3.wbridge.n_miss,
+               dut.sun3.wbridge.n_rd_notok, dut.sun3.wbridge.n_uncached,
+               dut.sun3.wbridge.n_whit, dut.sun3.wbridge.n_wmiss,
+               dut.sun3.wbridge.n_winval, dut.sun3.wbridge.n_fill);
+`endif
       $finish;
    endtask
 

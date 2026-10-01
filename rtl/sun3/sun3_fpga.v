@@ -98,7 +98,10 @@ module sun3_fpga(/* clock, reset */
 `ifdef SUN3_WB_FIFO
 		 ,
 		 input 		wb_clk_i,
-		 input 		wb_rst_i
+		 input 		wb_rst_i,
+		 // the whole 128-bit line a read brought back, valid with
+		 // wb_ack_i; only the cached bridge (SUN3_WB_CACHE) reads it
+		 input [127:0] 	wb_line_i
 `endif
 		 );
 
@@ -634,8 +637,15 @@ module sun3_fpga(/* clock, reset */
    // The memory bridge: synchronous (DSACK waits for the Wishbone answer), or
    // with SUN3_WB_FIFO two dual-clock FIFOs, posted writes and tagged reads,
    // the Wishbone side in the memory controller's clock (sun3_fifo_bridge.v).
-   // Same instance name either way: the board constraints name it.
-`ifdef SUN3_WB_FIFO
+   // SUN3_WB_CACHE puts a read cache in front of those FIFOs
+   // (sun3_cached_fifo_bridge.v).
+   // Same instance name every way: the board constraints name it.
+`ifdef SUN3_WB_CACHE
+   sun3_cached_fifo_bridge #(.IDX(`SUN3_WB_CACHE_IDX)) wbridge(.CLK(CLK),
+				.WB_CLK(wb_clk_i),
+				.WB_RESET(wb_rst_i),
+				.wb_line_i(wb_line_i),
+`elsif SUN3_WB_FIFO
    sun3_fifo_bridge wbridge(.CLK(CLK),
 				.WB_CLK(wb_clk_i),
 				.WB_RESET(wb_rst_i),

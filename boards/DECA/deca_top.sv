@@ -117,6 +117,7 @@ module deca_top #(
     output wire        wb_we_o,
     input  wire [31:0] wb_dat_i,
     input  wire        wb_ack_i,
+    input  wire [127:0] wb_line_i,     // the read's whole line (cached bridge)
     output wire        cpu_clk_o,
     output wire        sys_reset_o
 `else
@@ -215,6 +216,7 @@ module deca_top #(
    wire [29:0] wb_adr;
    wire [31:0] wb_dat_m2s, wb_dat_s2m;
    wire [3:0]  wb_sel;
+   wire [127:0] wb_line_s2m;          // the read's whole line, for the cached bridge
 
    // The Wishbone port's clock.  The synchronous bridge runs it on cpu_clk and
    // deca_wb_to_ddr3 crosses to CMD_CLK; the FIFO bridge (SUN3_WB_FIFO) crosses
@@ -296,7 +298,8 @@ module deca_top #(
 `ifdef SUN3_WB_FIFO
        ,
        .wb_clk_i    (wb_side_clk),
-       .wb_rst_i    (wb_side_rst)
+       .wb_rst_i    (wb_side_rst),
+       .wb_line_i   (wb_line_s2m)
 `endif
    );
 
@@ -316,6 +319,7 @@ module deca_top #(
    assign wb_we_o     = wb_we;
    assign wb_dat_s2m  = wb_dat_i;
    assign wb_ack      = wb_ack_i;
+   assign wb_line_s2m = wb_line_i;
    assign cpu_clk_o   = cpu_clk;
    assign sys_reset_o = sys_reset;
    assign ddr3_ready    = 1'b1;       // nothing to calibrate
@@ -347,7 +351,7 @@ module deca_top #(
        .ddr3_ready     (ddr3_ready),
        .wb_cyc_i (wb_cyc), .wb_stb_i (wb_stb), .wb_adr_i (wb_adr),
        .wb_dat_i (wb_dat_m2s), .wb_sel_i (wb_sel), .wb_we_i (wb_we),
-       .wb_dat_o (wb_dat_s2m), .wb_ack_o (wb_ack), .wb_line_o (),
+       .wb_dat_o (wb_dat_s2m), .wb_ack_o (wb_ack), .wb_line_o (wb_line_s2m),
        .CMD_busy       (cmd_busy_a[0]),
        .CMD_ena        (cmd_ena_a[0]),
        .CMD_write_ena  (cmd_write_ena_a[0]),

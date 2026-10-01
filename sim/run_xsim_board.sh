@@ -54,6 +54,16 @@ tag="$BOARD-$BOARD_MEM-$cpu-v$romver-$rom-${mem}m"
 [ "$hz" != 20000000 ] && tag="$tag-cpu$((hz / 1000000))"
 wbfifo=${SUN3_WB_FIFO:-0}
 [ "$wbfifo" = 1 ] && tag="$tag-wbfifo"
+wbcache=${SUN3_WB_CACHE:-0}
+wbcacheidx=${SUN3_WB_CACHE_IDX:-9}
+if [ "$wbcache" = 1 ]; then
+	if [ "$wbfifo" != 1 ]; then
+		echo "WB_CACHE=1 needs WB_FIFO=1: the cache sits in front of the FIFO bridge" >&2
+		exit 1
+	fi
+	tag="$tag-wbcache"
+	[ "$wbcacheidx" != 9 ] && tag="$tag$wbcacheidx"
+fi
 for d in $SUN3_DEFINES; do tag="$tag-${d//=/_}"; done
 rundir="$top/build/sim/board-$tag"
 mkdir -p "$rundir"
@@ -66,6 +76,7 @@ fi
 
 defargs=(-d SUN3_SIM -d "SUN3_CPU_HZ=$hz" -d "SUN3_MEM_MIB=$mem" -d "SUN3_BOOTROM_FILE=\"$romfile\"")
 [ "$wbfifo" = 1 ] && defargs+=(-d SUN3_WB_FIFO)
+[ "$wbcache" = 1 ] && defargs+=(-d SUN3_WB_CACHE -d "SUN3_WB_CACHE_IDX=$wbcacheidx")
 for d in $SUN3_DEFINES; do defargs+=(-d "$d"); done
 
 if [ "$BOARD" = deca ] && { [ "$BOARD_MEM" != fast ] || [ "$BOARD_CLKGEN" != behavioural ]; }; then

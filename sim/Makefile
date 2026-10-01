@@ -37,6 +37,10 @@ SCSI        ?= 0
 # WB_FIFO=1: the FIFO memory bridge (posted writes, tagged reads), the RAM
 # model on its own 83.33 MHz clock
 WB_FIFO     ?= 0
+# WB_CACHE=1 (needs WB_FIFO=1): the read cache in front of it, 2**WB_CACHE_IDX
+# lines of 16 bytes
+WB_CACHE    ?= 0
+WB_CACHE_IDX ?= 9
 MEM_LATENCY ?= 0
 MEM_FILL    ?= 00000000
 CPU_HZ      ?= 20000000
@@ -54,9 +58,9 @@ TOP = ..
 SHELL = /bin/bash
 
 # The run directory run_xsim.sh picks, so `check' reads the right log.
-TAG := $(CPU)-v$(ROM_VER)-$(ROM)-$(MEM_MIB)m-$(ETH)$(if $(filter 1,$(SCSI)),-scsi)$(if $(filter 1,$(WB_FIFO)),-wbfifo)$(if $(filter-out 0,$(MEM_LATENCY)),-lat$(MEM_LATENCY))$(if $(filter-out 00000000,$(MEM_FILL)),-fill$(MEM_FILL))$(if $(filter-out 20000000,$(CPU_HZ)),-cpu$(shell echo $$(($(CPU_HZ)/1000000))))$(if $(filter-out 9600,$(BAUD)),-baud$(BAUD))$(foreach d,$(DEFINES),-$(subst =,_,$(d)))
+TAG := $(CPU)-v$(ROM_VER)-$(ROM)-$(MEM_MIB)m-$(ETH)$(if $(filter 1,$(SCSI)),-scsi)$(if $(filter 1,$(WB_FIFO)),-wbfifo)$(if $(filter 1,$(WB_CACHE)),-wbcache$(if $(filter-out 9,$(WB_CACHE_IDX)),$(WB_CACHE_IDX)))$(if $(filter-out 0,$(MEM_LATENCY)),-lat$(MEM_LATENCY))$(if $(filter-out 00000000,$(MEM_FILL)),-fill$(MEM_FILL))$(if $(filter-out 20000000,$(CPU_HZ)),-cpu$(shell echo $$(($(CPU_HZ)/1000000))))$(if $(filter-out 9600,$(BAUD)),-baud$(BAUD))$(foreach d,$(DEFINES),-$(subst =,_,$(d)))
 RUNDIR := $(TOP)/build/sim/xsim-$(TAG)
-BTAG := $(BOARD)-$(BOARD_MEM)-$(CPU)-v$(ROM_VER)-$(ROM)-$(MEM_MIB)m$(if $(filter fast,$(BOARD_MEM)),$(if $(filter-out 10,$(BOARD_LATENCY)),-lat$(BOARD_LATENCY)))$(if $(filter-out 20000000,$(CPU_HZ)),-cpu$(shell echo $$(($(CPU_HZ)/1000000))))$(if $(filter 1,$(WB_FIFO)),-wbfifo)$(foreach d,$(DEFINES),-$(subst =,_,$(d)))
+BTAG := $(BOARD)-$(BOARD_MEM)-$(CPU)-v$(ROM_VER)-$(ROM)-$(MEM_MIB)m$(if $(filter fast,$(BOARD_MEM)),$(if $(filter-out 10,$(BOARD_LATENCY)),-lat$(BOARD_LATENCY)))$(if $(filter-out 20000000,$(CPU_HZ)),-cpu$(shell echo $$(($(CPU_HZ)/1000000))))$(if $(filter 1,$(WB_FIFO)),-wbfifo)$(if $(filter 1,$(WB_CACHE)),-wbcache$(if $(filter-out 9,$(WB_CACHE_IDX)),$(WB_CACHE_IDX)))$(foreach d,$(DEFINES),-$(subst =,_,$(d)))
 BRUNDIR := $(TOP)/build/sim/board-$(BTAG)
 
 export SUN3_CPU=$(CPU)
@@ -66,6 +70,8 @@ export SUN3_MEM_MIB=$(MEM_MIB)
 export SUN3_ETH=$(ETH)
 export SUN3_SCSI=$(SCSI)
 export SUN3_WB_FIFO=$(WB_FIFO)
+export SUN3_WB_CACHE=$(WB_CACHE)
+export SUN3_WB_CACHE_IDX=$(WB_CACHE_IDX)
 export SUN3_MEM_LATENCY=$(MEM_LATENCY)
 export SUN3_MEM_FILL=$(MEM_FILL)
 export SUN3_CPU_HZ=$(CPU_HZ)
@@ -92,10 +98,10 @@ check:
 # Board-layer unit tests (sim/run_unit.sh): the DECA's DDR3 adapter and its
 # JTAG console bridge, each against a model of the IP it talks to; the FIFO
 # bridge, its dual-clock FIFO and its DECA adapter.
-decaddr3 decaconsole asyncfifo fifobridge decaddr3sync:
+decaddr3 decaconsole asyncfifo fifobridge cachedbridge decaddr3sync:
 	./run_unit.sh $@
 
 clean:
 	rm -rf $(TOP)/build/sim
 
-.PHONY: xsim check board board-check decaddr3 decaconsole asyncfifo fifobridge decaddr3sync clean
+.PHONY: xsim check board board-check decaddr3 decaconsole asyncfifo fifobridge cachedbridge decaddr3sync clean

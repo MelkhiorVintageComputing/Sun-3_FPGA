@@ -11,6 +11,8 @@
 #   ./run_unit.sh asyncfifo    sun3_async_fifo across two unrelated clocks
 #   ./run_unit.sh fifobridge   sun3_fifo_bridge (SUN3_WB_FIFO): posted writes,
 #                              tagged reads, stale answers dropped, lanes
+#   ./run_unit.sh cachedbridge sun3_cached_fifo_bridge (SUN3_WB_CACHE) against
+#                              a bus-level shadow of memory
 #   ./run_unit.sh decaddr3sync deca_wb_ddr3_sync, decaddr3's checks on CMD_CLK
 #
 # Copied, with its testbenches, from the Sun-2 project's sim/run_unit.sh.
@@ -26,7 +28,7 @@ if [ -z "${LIBRARY_PATH:-}" ] && [ -e /usr/lib/x86_64-linux-gnu/crt1.o ]; then
 	export LIBRARY_PATH=/usr/lib/x86_64-linux-gnu
 fi
 
-what=${1:?usage: run_unit.sh decaddr3|decaconsole|asyncfifo|fifobridge|decaddr3sync}
+what=${1:?usage: run_unit.sh decaddr3|decaconsole|asyncfifo|fifobridge|cachedbridge|decaddr3sync}
 rundir="$top/build/sim/unit-$what"
 rm -rf "$rundir"; mkdir -p "$rundir"; cd "$rundir"
 
@@ -86,6 +88,14 @@ fifobridge)
 	step xvlog --sv "$top/tb/tb_fifo_bridge.sv"
 	step xelab -debug off --timescale 1ns/1ps work.tb_fifo_bridge -s fifobridge_sim
 	verdict fifobridge_sim
+	;;
+cachedbridge)
+	# The cached FIFO bridge against a bus-level shadow of memory.
+	step xvlog -i "$top/rtl/sun3" -d SUN3_SIM "$top/rtl/sun3/sun3_async_fifo.v" \
+		"$top/rtl/sun3/sun3_cached_fifo_bridge.v"
+	step xvlog --sv "$top/tb/tb_cached_bridge.sv"
+	step xelab -debug off --timescale 1ns/1ps work.tb_cached_bridge -s cachedbridge_sim
+	verdict cachedbridge_sim
 	;;
 decaddr3sync)
 	# The decaddr3 checks against deca_wb_ddr3_sync, the FIFO bridge's

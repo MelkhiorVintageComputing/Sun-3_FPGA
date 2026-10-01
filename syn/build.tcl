@@ -2,7 +2,7 @@
 #
 #   vivado -mode batch -source syn/build.tcl \
 #       -tclargs CPU_HZ CPU_DIV BOARD CPU ETH MEM_MIB ROMFILE ALLOW_PW OUTDIR FB \
-#                SCSI DISK_OFF_MIB WB_FIFO
+#                SCSI DISK_OFF_MIB WB_FIFO WB_CACHE WB_CACHE_IDX
 #
 # Run through syn/Makefile, which owns the defaults and the output directory's
 # name (passed in, not recomputed here, so the two cannot disagree).
@@ -18,11 +18,11 @@ set top  [file normalize $here/..]
 
 source $here/boards.tcl
 
-if {[llength $argv] != 13} {
-    puts "ERROR: build.tcl wants 13 arguments (see its header), got [llength $argv]: $argv"
+if {[llength $argv] != 15} {
+    puts "ERROR: build.tcl wants 15 arguments (see its header), got [llength $argv]: $argv"
     exit 1
 }
-lassign $argv cpu_hz cpu_div board cpu eth mem_mib romfile allowpw outdir fb scsi disk_off_mib wb_fifo
+lassign $argv cpu_hz cpu_div board cpu eth mem_mib romfile allowpw outdir fb scsi disk_off_mib wb_fifo wb_cache wb_cache_idx
 
 # CPU_DIV names the MMCM divider directly and wins over CPU_HZ in
 # wukong_clkgen.sv, so from here on cpu_hz is the clock that will exist -- it
@@ -82,8 +82,16 @@ if {$fb == 0}          { lappend defines SUN3_NO_FB }
 # The FIFO bridge: its Wishbone side on MIG's ui_clk, wb_mig_sync in place of
 # wb_to_mig_ui.
 if {$wb_fifo == 1}     { lappend defines SUN3_WB_FIFO }
+# The read cache in front of the FIFO bridge, which it needs.
+if {$wb_cache == 1} {
+    if {$wb_fifo != 1} {
+        puts "ERROR: WB_CACHE=1 needs WB_FIFO=1: the cache sits in front of the FIFO bridge"
+        exit 1
+    }
+    lappend defines SUN3_WB_CACHE SUN3_WB_CACHE_IDX=$wb_cache_idx
+}
 
-puts "== Sun-3 for Wukong $board ($part), CPU $cpu at $cpu_hz Hz, $mem_mib MiB, PROM $romfile, ETH=$eth, FB=$fb, WB_FIFO=$wb_fifo =="
+puts "== Sun-3 for Wukong $board ($part), CPU $cpu at $cpu_hz Hz, $mem_mib MiB, PROM $romfile, ETH=$eth, FB=$fb, WB_FIFO=$wb_fifo, WB_CACHE=$wb_cache (IDX $wb_cache_idx) =="
 if {$scsi == 1} {
     puts "== SCSI disk at $disk_off_mib MiB on the micro-SD ([expr {$disk_off_mib * 2048}] sectors) =="
 }
@@ -155,7 +163,8 @@ read_verilog [list \
     $top/rtl/sun3/wish7990_sun3_regs.v \
     $top/rtl/sun3/wish7990_dvma_to_020.v \
     $top/rtl/sun3/sun3_async_fifo.v \
-    $top/rtl/sun3/sun3_fifo_bridge.v ]
+    $top/rtl/sun3/sun3_fifo_bridge.v \
+    $top/rtl/sun3/sun3_cached_fifo_bridge.v ]
 
 set sv [list]
 if {$scsi == 1} {

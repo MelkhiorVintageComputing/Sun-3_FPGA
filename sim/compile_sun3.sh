@@ -35,6 +35,7 @@ compile_sun3() {
 		"$top/rtl/sun3/sun3_wishbone_bridge.v" \
 		"$top/rtl/sun3/sun3_async_fifo.v" \
 		"$top/rtl/sun3/sun3_fifo_bridge.v" \
+		"$top/rtl/sun3/sun3_cached_fifo_bridge.v" \
 		"$top/rtl/sun3/fault_log.v" \
 		"$top/rtl/sun3/bus_trace.v" \
 		"$top/rtl/sun3/wish7990_sun3_regs.v" \
