@@ -24,6 +24,12 @@
 //       +C  cycle counter at the end of the cycle
 //
 // The entry written last is (next index - 1) mod 512.
+//
+// FREEZE (from the board: the DECA's ISSP) freezes it from outside, for a
+// machine that can no longer reach its monitor.  A frozen trace survives the
+// system reset, so it can be read from the PROM's monitor after a reset; a
+// write to the status register (REARM) unfreezes it.  Power-up starts it
+// empty and unfrozen.
 
 `include "sun3_attr.vh"
 
@@ -42,6 +48,7 @@ module bus_trace (input             CLK,
                   input             DVMA,
                   input [31:0]      CYCLES,
                   // control
+                  input             FREEZE,    // from the board, any time
                   input             REARM,     // a write to the status register
                   input [31:0]      REARM_DATA,
                   // the read port
@@ -57,8 +64,8 @@ module bus_trace (input             CLK,
    reg [1:0]  c_siz;
    reg        as_q;
 
-   reg [8:0]  wptr;
-   reg        frozen;
+   reg [8:0]  wptr = 9'h0;
+   reg        frozen = 1'b0;
 
    `SUN3_RAM_BLOCK reg [127:0] ring [0:511];
 
@@ -95,12 +102,13 @@ module bus_trace (input             CLK,
       end
 
       if (~RESET_n) begin
-         wptr     <= 9'h0;
-         frozen   <= 1'b0;
+         // A frozen trace is what someone reset the machine to read.
+         if (!frozen) wptr <= 9'h0;
          trig_adr <= 32'h0;
          post     <= 1'b0;
          post_cnt <= 8'h0;
       end else begin
+         if (FREEZE) frozen <= 1'b1;
          if (REARM) begin
             frozen   <= 1'b0;
             trig_adr <= REARM_DATA;

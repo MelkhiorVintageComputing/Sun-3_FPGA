@@ -126,6 +126,7 @@ module tb_sun3 #(
       .clk4m9152   (clk4m9152),
       .clk32k768   (clk32k768),
       .sys_reset   (sys_reset),
+      .trace_freeze (1'b0),
       .tx          (tx),
       .rx          (rx),
       .kbd_tx      (kbd_tx),
@@ -366,12 +367,17 @@ module tb_sun3 #(
 
    // Let the line finish printing before stopping -- or, with +type=<line>,
    // type that line at the prompt first and stop at the next one.
-   string type_line = "";
+   string type_line = "", type2_line = "";
    // A plusarg cannot carry a space: `_' in +type stands for one (+type=g_4000).
    initial begin
       void'($value$plusargs("type=%s", type_line));
       for (int i = 0; i < type_line.len(); i++)
         if (type_line[i] == "_") type_line[i] = " ";
+      // +type2=<line>: a second line, typed at the prompt that follows the
+      // first (e.g. +type=g_4000 +type2=k2).
+      void'($value$plusargs("type2=%s", type2_line));
+      for (int i = 0; i < type2_line.len(); i++)
+        if (type2_line[i] == "_") type2_line[i] = " ";
    end
 
    // +load=<file>@<hex byte address>: put a binary in memory once the PROM is
@@ -392,7 +398,22 @@ module tb_sun3 #(
          base = load_arg.substr(at + 1, load_arg.len() - 1).atohex();
          mem.load_bin(load_arg.substr(0, at - 1), base);
       end
-      if (type_line.len() > 0 && $test$plusargs("keep_running")) begin
+      if (type_line.len() > 0 && type2_line.len() > 0) begin
+         bit ok;
+         $display("\n[%0.3f ms] typing \"%s\"", $realtime / 1.0e6, type_line);
+         console_in.send_line(type_line);
+         console_mon.wait_for(">", 2000_000_000.0, ok);
+         #1000000;
+         if (!ok) wrap_up("TYPED, NO PROMPT");
+         $display("\n[%0.3f ms] typing \"%s\"%s", $realtime / 1.0e6, type2_line,
+                  $test$plusargs("keep_running") ? " and running on" : "");
+         console_in.send_line(type2_line);
+         if (!$test$plusargs("keep_running")) begin
+            console_mon.wait_for(">", 2000_000_000.0, ok);
+            #1000000;
+            wrap_up(ok ? "TYPED TWICE, PROMPT AGAIN" : "TYPED TWICE, NO PROMPT");
+         end
+      end else if (type_line.len() > 0 && $test$plusargs("keep_running")) begin
          $display("\n[%0.3f ms] typing \"%s\" and running on", $realtime / 1.0e6, type_line);
          console_in.send_line(type_line);
       end else if (type_line.len() > 0) begin

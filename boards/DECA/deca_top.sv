@@ -170,6 +170,7 @@ module deca_top #(
    // A BREAK on ttya (the Sun monitor's abort), held for as long as it is
    // set over JTAG: the JTAG UART carries bytes, not line states.
    wire jtag_break;
+   wire jtag_freeze;   // freeze the bus trace (tools/deca_reset.tcl freeze)
 
    reg [15:0] hold_ctr = 16'hFFFF;
    always @(posedge cpu_clk or negedge pll_locked)
@@ -250,6 +251,7 @@ module deca_top #(
        .clk4m9152   (clk_serial),
        .clk32k768   (1'b0),          // unused inside (the TOD runs on CLK)
        .sys_reset   (sys_reset),
+       .trace_freeze (jtag_freeze),
        .tx          (sun_tx),
        .rx          (sun_rx & ~jtag_break),
        .kbd_tx      (),
@@ -637,12 +639,13 @@ module deca_top #(
 `ifdef SUN3_SIM
    assign jtag_reset = 1'b0;
    assign jtag_break = 1'b0;
+   assign jtag_freeze = 1'b0;
 `else
    altsource_probe #(
        .sld_auto_instance_index ("YES"),
        .instance_id             ("SUN3"),
        .probe_width             (66),
-       .source_width            (2),
+       .source_width            (3),
        .source_initial_value    ("0"),
        .enable_metastability    ("YES")
    ) u_issp (
@@ -651,7 +654,7 @@ module deca_top #(
                  phy_present, phy_cfg_done, phy_speed, phy_fd,
                  todebug, leds,
                  blk_rsp.ready, blk_err_q, blk_rsp.count}),
-       .source ({jtag_break, jtag_reset})
+       .source ({jtag_freeze, jtag_break, jtag_reset})
    );
 `endif
 

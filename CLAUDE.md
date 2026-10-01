@@ -227,7 +227,7 @@ Bring-up aids in `tb_sun3`:
   state. It is not 1 ms, because the RD68021's instruction cache runs tight
   loops with no bus cycles at all.
 - `+load=<file>@<hexaddr>` loads a binary into memory once the PROM is at
-  its prompt, `+type=g_4000` (`_` for a space) types a line there, and
+  its prompt, `+type=g_4000` (`_` for a space) types a line there (`+type2=k2` a second line at the next prompt), and
   `+keep_running` runs on to the timeout: that is how a NetBSD kernel
   (`objcopy -O binary` of the ELF, at 0x4000) is simulated from the monitor.
 - `+berr_log` writes every bus error to `berr.txt` (FC, address, bus error
@@ -381,6 +381,9 @@ then `l`/`v`, then `s 5`):
   first instruction is `rts`, the handler validating it and setting FB/FC
   as NetBSD does, then RTE; prints `rteprobe PASS` when the `rts` comes
   back.
+  `sccie.bin` leaves the console SCC as a halted SunOS does (interrupts
+  and MIE on); with `+type2=k2` after `+type=g_4000` it checks that `k2`
+  still reboots.
   `nmiprobe.bin`, the same way: 20 of the monitor's level-7 clock ticks
   taken out of `STOP #$2000`, counting handler entries and entries finding
   the clock status clear; `nmiprobe PASS` is 20 and 0.
@@ -429,10 +432,16 @@ From the Sun-2 project's DECA port, which has the history of every choice.
   `SUN3_CONSOLE=/tmp/deca-console` points `tools/board_console.py` (and the
   scripts using it) there. The raw TX is also on GPIO0_D[0] = PIN_W18
   (P8 pin 3) for a 3.3 V USB-TTL cable.
-- **ISSP** (`tools/deca_reset.tcl [reset|break]` through `altera.sh
+- **ISSP** (`tools/deca_reset.tcl [reset|break|freeze]` through `altera.sh
   quartus_stp`): DDR3 ready/calibration, PHY state, diag, todebug; source 0
   resets the machine, source 1 holds ttya's RX low (a BREAK: the monitor's
-  abort, which the JTAG UART cannot carry). It and the console share the
+  abort, which the JTAG UART cannot carry), source 2 freezes the bus trace.
+  A frozen trace survives the reset. So for a machine that can no longer
+  reach its monitor:
+  1. Re-arm the trace at the monitor before the experiment (`s 3`,
+     `l d0001000`, `0`, `q`, `s 5`).
+  2. When it hangs: `freeze`, `reset`, then `break` into the fresh PROM.
+  3. `tools/read_bus_trace.sh -n`, then `tools/decode_bus_trace.py`. It and the console share the
   JTAG chain: stop the console first. Output meanwhile queues (2 KiB).
 - **Pins** (`syn/deca_pins.qsf`, `deca_ddr3_pins.qsf`): LEDs active low,
   SW[0] down = diag register, up = todebug; SW[1] = the diag switch,
@@ -507,17 +516,41 @@ installed", then SunOS 4.1.1 from the card multi-user (`zs0`, `zs1`,
 ROM=noparity TIMEOUT_MS=20000`, no fastboot list) it reaches `>` at
 4,667 ms simulated, 1 h 18 min wall clock, and `check` passes.
 
-**`k2` after SunOS hangs, under 1.9 and 3.0.1 alike.** From a monitor
-reached by BREAK during the PROM's own boot, `k2` reboots fine; after
-SunOS has run and been `halt`ed, it never comes back. The diag LEDs keep
-their last value (0x89) and the PROM fetch counter keeps moving. `ifconfig
-le0 down` before the halt changes nothing. The 1.9 `k` path executes RESET
-(0x0fef053a) and then writes 0x0D to the LEDs (0x0fef0224) within a few
-dozen instructions (interrupt register, monitor RAM at 0xFFFFE17A, context,
-maps, enable register); 0x0D never shows, so it stops in that stretch.
-Under investigation: the reset nets of the real 3/60.
+**`k2` after SunOS hung (fixed).** Under 1.9 and 3.0.1 alike, `k2`
+rebooted fine from a fresh PROM but, after SunOS had run and been
+`halt`ed, never came back: diag stuck at 0x89, the PROM still fetching.
+The bus trace, frozen from ISSP during the hang and read from a fresh
+monitor, showed why:
+- SunOS leaves the console SCC with its interrupts and master interrupt
+  enable on.
+- `k2`'s RESET did not reset the SCCs.
+- Self test 9 (interrupt test, code 0xF6) enables interrupts expecting a
+  soft level 1. It took the SCC's level 6 instead. The unexpected-interrupt
+  handler (0x0fef2cec) shows 0x76 (0x89 as read: LEDs active low) and
+  restarts the test, forever.
 
-After a `k2`, the JTAG console bridge delivers nothing until it is
+`tools/beprobe/sccie.S` reproduces it in simulation (`+type=g_4000
++type2=k2 +keep_running`). The SCCs are now reset on the RESET line, the
+CPU's RESET instruction included; `k2` after SunOS reboots, in simulation
+and on the DECA. The production schematic seems to show their RD/WR decode
+PAL (U311) taking `INIT-` only; its equations are unreadable, and a real
+3/60 must clear the SCCs somehow for `k2` to work.
+
+**Reset nets, from the 3/60 schematics** (`Inputs/doc/
+Sun-3_60_Schematic_Jul87.pdf`, production rev 13; `Inputs/doc/f.pdf`, an
+earlier "FERRARI" revision):
+- `RESET-`, driven by the CPU's RESET instruction and by `INIT-`, reaches
+  only the interrupt register, the LANCE chip and the FPU.
+- Everything else waits for `INIT-` (power-on, watchdog), which a RESET
+  instruction cannot cause: System Enable, diag LEDs, memory error control,
+  the SCSI board logic (its CSR holds the 5380 and the UDC in reset), the
+  DVMA arbiter, video.
+- HALT is asserted with `INIT-` only.
+
+The FPGA follows this, the SCCs excepted (see above): `sun3_fpga.v`
+comments each reset with its sheet and part.
+
+After a `k2` the JTAG console bridge may deliver nothing until it is
 restarted (`tools/deca_console_pty.sh`).
 
 The last word of a Sun-3 PROM is the 16-bit byte sum of the rest, checked by

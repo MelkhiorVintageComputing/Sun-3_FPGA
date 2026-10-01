@@ -4,6 +4,7 @@
 #     syn/altera.sh quartus_stp -t tools/deca_reset.tcl          read
 #     syn/altera.sh quartus_stp -t tools/deca_reset.tcl reset    pulse, then read
 #     syn/altera.sh quartus_stp -t tools/deca_reset.tcl break    a 300 ms BREAK
+#     syn/altera.sh quartus_stp -t tools/deca_reset.tcl freeze   freeze the bus trace
 #                                                                on ttya (abort)
 #
 # The DECA's only reset is a button, and configuring the FPGA tears down any
@@ -35,6 +36,11 @@ if {[lindex $argv 0] eq "reset"} {
     after 300
     write_source_data -instance_index $idx -value 0 -value_in_hex
     puts "BREAK sent on ttya"
+} elseif {[lindex $argv 0] eq "freeze"} {
+    write_source_data -instance_index $idx -value 4 -value_in_hex
+    after 50
+    write_source_data -instance_index $idx -value 0 -value_in_hex
+    puts "bus trace frozen (it survives a reset; tools/read_bus_trace.sh -n reads it)"
 }
 set raw [read_probe_data -instance_index $idx]
 end_insystem_source_probe
