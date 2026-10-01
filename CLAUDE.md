@@ -503,11 +503,22 @@ sites appears in 3.0.1 as the same instruction sequence at another address
 On the DECA (ETH+SCSI, cached bridge) 3.0.1 boots from power-up and from
 an ISSP reset: "Model Sun-3/60C/G", "ROM Rev 3.0.1, 16MB memory
 installed", then SunOS 4.1.1 from the card multi-user (`zs0`, `zs1`,
-`le0`, pings). Not working: the monitor's `k2` under 3.0.1 never comes
-back. The PROM keeps running (its fetch counter moves) with the diag LEDs
-at 0x89 (as lit 0x76) and nothing on ttya; 1.9's `k2` works. Not
-investigated yet. No fastboot list exists for 3.0.1, so its simulated boot
-takes hours.
+`le0`, pings). In simulation (`make -C sim xsim CPU=rd68021 ROM_VER=3.0.1
+ROM=noparity TIMEOUT_MS=20000`, no fastboot list) it reaches `>` at
+4,667 ms simulated, 1 h 18 min wall clock, and `check` passes.
+
+**`k2` after SunOS hangs, under 1.9 and 3.0.1 alike.** From a monitor
+reached by BREAK during the PROM's own boot, `k2` reboots fine; after
+SunOS has run and been `halt`ed, it never comes back. The diag LEDs keep
+their last value (0x89) and the PROM fetch counter keeps moving. `ifconfig
+le0 down` before the halt changes nothing. The 1.9 `k` path executes RESET
+(0x0fef053a) and then writes 0x0D to the LEDs (0x0fef0224) within a few
+dozen instructions (interrupt register, monitor RAM at 0xFFFFE17A, context,
+maps, enable register); 0x0D never shows, so it stops in that stretch.
+Under investigation: the reset nets of the real 3/60.
+
+After a `k2`, the JTAG console bridge delivers nothing until it is
+restarted (`tools/deca_console_pty.sh`).
 
 The last word of a Sun-3 PROM is the 16-bit byte sum of the rest, checked by
 the PROM itself (the loop at 0x0FEF1F4A reads all 64 KiB through `moves` and
