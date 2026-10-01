@@ -163,7 +163,19 @@ DECA builds, 16.667 MHz, ETH+SCSI:
 - `WB_CACHE=1` (8 KiB): WNS +0.854 ns, 39,622 LE (80%), 157 M9K, CPU Fmax
   23.63 MHz; its board simulation reaches `>`.
 
-Neither has been run on the DECA itself yet.
+On the DECA itself, the same card and binaries; every build boots SunOS
+multi-user, fsck clean:
+
+| DECA, 16.667 MHz | `WB_FIFO=0` | `WB_FIFO=1` | `WB_FIFO=1 WB_CACHE=1` |
+|---|---|---|---|
+| Dhrystone 1.1 (`user`, 50000) | 33.5 s, 1,493/s | 30.4 s, 1,645/s | 18.8 s, 2,660/s |
+| `patwr` (32 MiB, 0 wrong) | 15:48 | 14:24 | 9:54 |
+| `dd` /dev/zero to /dev/null | 37.4 s sys | 33.2 s sys | 21.5 s sys |
+| `dd` write to `/usr` | 97.8 s sys, 4:13 | 87.4 s sys, 4:08 | 54.3 s sys, 4:04 |
+| `dd` read back | 57.0 s sys, 1:17 | 23.8 s sys, 1:06 | 32.0 s sys, 1:06 |
+| rc scripts (boot) | 90 s | 85 s | 67 s |
+
+The read-back `sys` times are noisy: the run is mostly waiting on the card.
 
 ## Commands
 
@@ -565,6 +577,11 @@ settles it in minutes.
   it.** `tr -d '\200-\377'` throws away every character that has its
   parity bit set. `board_console.py --until` compares raw bytes, so it can
   miss its string for the same reason.
+- **A SunOS command line is at most 256 characters** (the terminal's
+  canonical buffer). A longer line typed at the console never completes:
+  every further key only rings the bell, which looks like a hung machine.
+  ^U clears it. Over the DECA's JTAG console, typed characters can also be
+  dropped (no flow control), so check the echo of anything that matters.
 - **`STOP_ON` cannot contain a space** (xsim splits its arguments). With
   `+load`/`+type` it must stay `>`: the prompt is what triggers them.
 - **VHDL-2008 is required** for the Suska cores (`buffer` formals on `out`
