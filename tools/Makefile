@@ -5,15 +5,16 @@
 #
 #   build/rom/sun3_60_v<ver>.bin                 unpacked, sha256-checked
 #   build/rom/bootrom_sun3_60_v<ver>_pristine_32bits.vh
-#   build/rom/bootrom_sun3_60_v1.9_noparity_32bits.vh
-#                 parity hardware taken out (sun3_60_v1.9_noparity.txt)
+#   build/rom/bootrom_sun3_60_v<1.9|3.0.1>_noparity_32bits.vh
+#                 parity hardware taken out (sun3_60_v<ver>_noparity.txt)
 #   build/rom/bootrom_sun3_60_v1.9_fast_32bits.vh
 #                 noparity, plus two waiting loops shortened
 #                 (sun3_60_v1.9_fastboot.txt) -- the simulation default
 #
 # The .vh files are Verilog `case' bodies included by rtl/sun3/bootrom32.v.
-# Only Rev 1.9 has patch lists: the patches are addresses and opcodes specific
-# to that image, and rompatch refuses to apply them anywhere else.
+# Rev 1.9 and 3.0.1 have noparity lists (1.9 alone a fastboot one): the
+# patches are addresses and opcodes specific to each image, and rompatch
+# refuses to apply them anywhere else.
 
 TOP     = ..
 ROMDIR  = $(TOP)/build/rom
@@ -31,6 +32,7 @@ CFLAGS ?= -O2 -Wall
 
 all: $(foreach v,$(VERSIONS),$(ROMDIR)/bootrom_sun3_60_v$(v)_pristine_32bits.vh) \
      $(ROMDIR)/bootrom_sun3_60_v1.9_noparity_32bits.vh \
+     $(ROMDIR)/bootrom_sun3_60_v3.0.1_noparity_32bits.vh \
      $(ROMDIR)/bootrom_sun3_60_v1.9_fast_32bits.vh
 
 $(ROMDIR):
@@ -61,6 +63,12 @@ $(ROMDIR)/sun3_60_v1.9_fast.bin: $(ROMDIR)/sun3_60_v1.9.bin rompatch sun3_60_v1.
 	./rompatch $< $@ sun3_60_v1.9_noparity.txt sun3_60_v1.9_fastboot.txt
 
 $(ROMDIR)/bootrom_sun3_60_v1.9_%_32bits.vh: $(ROMDIR)/sun3_60_v1.9_%.bin rom
+	./rom D <$< >$@
+
+$(ROMDIR)/sun3_60_v3.0.1_noparity.bin: $(ROMDIR)/sun3_60_v3.0.1.bin rompatch sun3_60_v3.0.1_noparity.txt
+	./rompatch $< $@ sun3_60_v3.0.1_noparity.txt
+
+$(ROMDIR)/bootrom_sun3_60_v3.0.1_noparity_32bits.vh: $(ROMDIR)/sun3_60_v3.0.1_noparity.bin rom
 	./rom D <$< >$@
 
 # Sanity check: the noparity list must reproduce the RomPatcher image it was

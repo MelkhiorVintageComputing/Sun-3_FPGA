@@ -11,7 +11,7 @@
 # Knobs (all optional):
 #   CPU=suska|rd68021           default suska
 #   ROM=fast|noparity|pristine  default fast (v1.9 + noparity + fastboot)
-#   ROM_VER=1.9|2.8.3|3.0.1     default 1.9; the patched ROMs are 1.9 only
+#   ROM_VER=1.9|2.8.3|3.0.1     default 1.9; noparity for 1.9 and 3.0.1, fast for 1.9 only
 #   MEM_MIB=<n>                 default 4
 #   ETH=none|wish7990           default none
 #   MEM_LATENCY=<n>             Wishbone wait states, default 0

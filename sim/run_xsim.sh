@@ -9,7 +9,7 @@
 #   XILINX_VIVADO     Vivado install (default /opt/Xilinx/2025.2/Vivado)
 #   SUN3_CPU          suska (default) | rd68021
 #   SUN3_ROM          fast (default) | noparity | pristine
-#   SUN3_ROM_VER      1.9 (default) | 2.8.3 | 3.0.1  -- patched variants: 1.9 only
+#   SUN3_ROM_VER      1.9 (default) | 2.8.3 | 3.0.1  -- noparity: 1.9 and 3.0.1; fast: 1.9 only
 #   SUN3_MEM_MIB      installed memory in MiB (default 4)
 #   SUN3_ETH          none (default) | wish7990
 #   SUN3_SCSI         0 (default) | 1: the on-board SCSI, with tb/blk_file.sv as
@@ -85,7 +85,7 @@ mkdir -p "$rundir"
 # The boot PROM includes live in build/rom; generate them if needed.
 make -s -C "$top/tools"
 if [ ! -e "$top/build/rom/$romfile" ]; then
-	echo "no PROM image $romfile (the patched variants exist for Rev 1.9 only)" >&2
+	echo "no PROM image $romfile (noparity exists for Rev 1.9 and 3.0.1, fast for 1.9 only)" >&2
 	exit 1
 fi
 

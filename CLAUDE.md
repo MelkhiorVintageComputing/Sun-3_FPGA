@@ -206,7 +206,7 @@ The read-back `sys` times are noisy: the run is mostly waiting on the card.
 | `make -C syn bitstream BOARD=deca ETH=1 SCSI=1 [DISK_OFF_MIB=n]` | the DECA with SCSI, the disk at n MiB into the micro-SD (`tools/deca_reset.tcl` shows `disk: ready`, size) |
 
 `sim/Makefile` knobs: `CPU=suska|rd68021`, `ROM=fast|noparity|pristine`,
-`ROM_VER=1.9|2.8.3|3.0.1` (patched variants: 1.9 only), `MEM_MIB`,
+`ROM_VER=1.9|2.8.3|3.0.1` (`noparity`: 1.9 and 3.0.1; `fast`: 1.9 only), `MEM_MIB`,
 `ETH=none|wish7990`, `MEM_LATENCY`, `CPU_HZ`, `BAUD`, `TIMEOUT_MS`,
 `STOP_ON`, `DIAG`, `DEFINES`, `XSIMARGS`, `SCSI`, `WB_FIFO`, `WB_CACHE`, `WB_CACHE_IDX` (also for `board`); with the cache the run ends with a `[cache]` line (hits, misses, refused lookups, fills).
 
@@ -493,6 +493,21 @@ From the Sun-2 project's DECA port, which has the history of every choice.
   to 64 KiB per megabyte found; the RAM initialisation fill cut to 64 KiB per
   megabyte (by shortening its loop bound only -- see Traps); the wait for a
   keyboard's reply cut from 1000 timer ticks to 10.
+
+Rev 3.0.1 has a `noparity` list too (`tools/sun3_60_v3.0.1_noparity.txt`,
+`ROM_VER=3.0.1 ROM=noparity`, in both flows). Each of 1.9's six patch
+sites appears in 3.0.1 as the same instruction sequence at another address
+(checked by disassembly), so the words are 1.9's. The jump past tests
+0x0E/0x0F even has the same displacement.
+
+On the DECA (ETH+SCSI, cached bridge) 3.0.1 boots from power-up and from
+an ISSP reset: "Model Sun-3/60C/G", "ROM Rev 3.0.1, 16MB memory
+installed", then SunOS 4.1.1 from the card multi-user (`zs0`, `zs1`,
+`le0`, pings). Not working: the monitor's `k2` under 3.0.1 never comes
+back. The PROM keeps running (its fetch counter moves) with the diag LEDs
+at 0x89 (as lit 0x76) and nothing on ttya; 1.9's `k2` works. Not
+investigated yet. No fastboot list exists for 3.0.1, so its simulated boot
+takes hours.
 
 The last word of a Sun-3 PROM is the 16-bit byte sum of the rest, checked by
 the PROM itself (the loop at 0x0FEF1F4A reads all 64 KiB through `moves` and

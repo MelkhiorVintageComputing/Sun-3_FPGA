@@ -1,0 +1,65 @@
+# Sun 3/60 PROM Rev 3.0.1: run without parity hardware.
+#
+# The same six patches as sun3_60_v1.9_noparity.txt (which has the reasons),
+# found again in Rev 3.0.1: each site is the same instruction sequence as in
+# 1.9 at another address (checked by disassembly, m68k-linux-gnu-objdump), so
+# the new words are 1.9's.  The skip of tests 0x0E/0x0F is a `jmp (bd,pc)'
+# whose displacement happens to be the same, 0x17a, in both images.
+#
+# Line format: <address> <expected> <new>   (hex, 16-bit words, PROM at 0x0fef0000)
+
+# fixIrq7Handler: `move.b 0x0fe08000,%d0' -> `move.b #0,%d0; nop'
+# (1.9: 0x0fef03a4).
+0fef03ae 1039 103c
+0fef03b0 0fe0 0000
+0fef03b2 8000 4e71
+
+# fixMonReset: `move.b #0x50,0x0fe08000' (enable parity checking) -> 4x nop
+# (1.9: 0x0fef188c).
+0fef3f4e 13fc 4e71
+0fef3f50 0050 4e71
+0fef3f52 0fe0 4e71
+0fef3f54 8000 4e71
+
+# bypassTest0Eand0F: `move.b #-15,%d7; lea 0x0fefe702,%a4' -> `jmp
+# 0x0fefb5b2; nop', the memory sizing printout that follows the two parity
+# tests and the clearing of their registers (1.9: 0x0fef26da -> 0x0fef2856).
+0fefb436 1e3c 4efb
+0fefb438 fff1 0170
+0fefb43a 49f9 0000
+0fefb43c 0fef 017a
+0fefb43e e702 4e71
+
+# patch_test_10_memory_test_1: don't enable parity before the memory test
+# (`move.b #0x50,0x0fff4000'; 1.9: 0x0fef2920).
+0fefb67c 13fc 4e71
+0fefb67e 0050 4e71
+0fefb680 0fff 4e71
+0fefb682 4000 4e71
+
+# patch_test_10_memory_test_2: drop the check of the memory error registers
+# after the memory test, and their reset (1.9: 0x0fef299c).
+0fefb6f8 1439 4e71
+0fefb6fa 0fff 4e71
+0fefb6fc 4000 4e71
+0fefb6fe 23fc 4e71
+0fefb700 0000 4e71
+0fefb702 0000 4e71
+0fefb704 0fff 4e71
+0fefb706 4004 4e71
+0fefb708 49f9 4e71
+0fefb70a 0fef 4e71
+0fefb70c e710 4e71
+0fefb70e 0802 4e71
+0fefb710 0007 4e71
+0fefb712 6600 4e71
+0fefb714 0008 4e71
+0fefb716 49f9 4e71
+0fefb718 0fef 4e71
+0fefb71a e7f0 4e71
+
+# fixMonitor_Key_K: `clr.b 0x0fe08000' in the `k' command -> 3x nop
+# (1.9: 0x0fef4070).
+0fef172a 4239 4e71
+0fef172c 0fe0 4e71
+0fef172e 8000 4e71
