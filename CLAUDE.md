@@ -303,9 +303,14 @@ of simulated time per minute at 20 MHz with the Suska core.
 - **EEPROM.** Preloaded; installed memory follows `SUN3_MEM_MIB`, and the
   console is serial A unless `SUN3_FB`.
 - **Ethernet.** Wish7990 behind `SUN3_ETH_WISH7990`, off by default.
-  `patches/Wish7990/` moves declarations ahead of their first use, which
-  xvlog insists on and Verilator/Icarus do not. With it built, the boot is
-  unchanged; the PROM's boot path (`sd`) does not exercise it.
+  Unpatched since upstream 8610ef5, which declares nets before their first
+  use (xvlog insists, Verilator/Icarus do not) and samples MDIO reads
+  before MDC rises: the three local patches are gone. With it built, the
+  PROM boot is unchanged; the PROM's boot path (`sd`) does not exercise it.
+  On the DECA (8610ef5, cached bridge) SunOS boots and the PHY is
+  configured (10 Mb/s full duplex). 50 pings of 1,400 bytes are all
+  answered, and 1 MiB through TCP echo comes back identical (310 kB/s both
+  ways).
 
 ## The board (QMTech Wukong)
 
@@ -572,8 +577,9 @@ settles it in minutes.
   defaulted to 19.6608 MHz under a 20 MHz CLK (time 1.7% fast). It now
   takes `SUN3_CPU_HZ`, which the sim and syn flows set from the same
   variable as the clock.
-- **Wish7990's MDIO station samples reads a cycle late** (after MDC rises);
-  `patches/Wish7990/0003` carries Wish82586's fix.
+- **Wish7990's MDIO station sampled reads a cycle late** (after MDC rose),
+  until upstream 8610ef5 took Wish82586's fix; an older Wish7990 needs it
+  back as a patch.
 - **`tools/patch_inputs.sh` rebuilds a copy only when a source or a patch is
   NEWER than its stamp**: removing a patch (to test without it) rebuilds
   nothing, and the run silently uses the patched copy. Delete
