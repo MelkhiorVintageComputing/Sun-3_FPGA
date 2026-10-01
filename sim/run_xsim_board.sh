@@ -52,9 +52,9 @@ tag="$BOARD-$BOARD_MEM-$cpu-v$romver-$rom-${mem}m"
 [ "$BOARD_MEM" = fast ] && [ "$lat" != 10 ] && tag="$tag-lat$lat"
 [ "$BOARD_CLKGEN" = real ] && [ "$BOARD_MEM" = fast ] && tag="$tag-mmcm"
 [ "$hz" != 20000000 ] && tag="$tag-cpu$((hz / 1000000))"
-wbfifo=${SUN3_WB_FIFO:-0}
+wbfifo=${SUN3_WB_FIFO:-1}
 [ "$wbfifo" = 1 ] && tag="$tag-wbfifo"
-wbcache=${SUN3_WB_CACHE:-0}
+wbcache=${SUN3_WB_CACHE:-$wbfifo}
 wbcacheidx=${SUN3_WB_CACHE_IDX:-9}
 if [ "$wbcache" = 1 ]; then
 	if [ "$wbfifo" != 1 ]; then

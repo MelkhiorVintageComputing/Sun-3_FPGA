@@ -52,8 +52,8 @@ array set opt {
     -bus_trace 1
     -scsi      0
     -disk_off_mib 0
-    -wb_fifo   0
-    -wb_cache  0
+    -wb_fifo   1
+    -wb_cache  1
     -wb_cache_idx 9
     -mem_mib   16
     -romfile   bootrom_sun3_60_v1.9_noparity_32bits.vh

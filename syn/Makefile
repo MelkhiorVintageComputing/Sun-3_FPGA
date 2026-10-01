@@ -12,7 +12,7 @@
 #   make clean               drop the Vivado output (clean-ip: the MIG too)
 #
 # Knobs: CPU_HZ (20000000), CPU_DIV (56: 17.86 MHz, wins), BOARD (v1s1), CPU (suska|rd68021),
-# ETH (0|1), FB (1), SCSI (0), DISK_OFF_MIB (0), WB_FIFO (0), WB_CACHE (0), WB_CACHE_IDX (9), MEM_MIB (16), ROM (noparity|pristine|fast), ROM_VER (1.9),
+# ETH (0|1), FB (1), SCSI (0), DISK_OFF_MIB (0), WB_FIFO (1), WB_CACHE (= WB_FIFO), WB_CACHE_IDX (9), MEM_MIB (16), ROM (noparity|pristine|fast), ROM_VER (1.9),
 # ALLOW_PW (0), HW_URL (localhost:3121).
 #
 # Nothing here is committed; everything lands in ../build/syn.  Vivado runs
@@ -48,11 +48,13 @@ ETH     ?= 0
 SCSI    ?= 0
 DISK_OFF_MIB ?= 0
 # The FIFO memory bridge (posted writes, tagged reads), its Wishbone side in
-# the memory controller's clock: 0 keeps sun3_wishbone_bridge.
-WB_FIFO ?= 0
-# The read cache in front of it (needs WB_FIFO=1): 2**WB_CACHE_IDX lines of
-# 16 bytes, direct-mapped, write-through, no-allocate.
-WB_CACHE ?= 0
+# the memory controller's clock (default); 0 is the synchronous
+# sun3_wishbone_bridge.
+WB_FIFO ?= 1
+# The read cache in front of it (needs WB_FIFO=1, and defaults to it):
+# 2**WB_CACHE_IDX lines of 16 bytes, direct-mapped, write-through,
+# no-allocate.  8 KiB fits both boards.
+WB_CACHE ?= $(WB_FIFO)
 WB_CACHE_IDX ?= 9
 # The 3/60's on-board video memory (the PROM relies on it; see CLAUDE.md).
 FB      ?= 1

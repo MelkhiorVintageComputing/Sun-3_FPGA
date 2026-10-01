@@ -87,8 +87,13 @@ each row booted SunOS from the card, answered pings and ran a clean
 
 The design's worst path (+1.276 ns) is outside the CPU clock throughout.
 
-Step 6 (branch `fifo-bridge`, in progress): the FIFO memory bridge
-(`WB_FIFO=1`, `SUN3_WB_FIFO`), ported from the Sun-2 project.
+Step 6 (done, merged from branch `fifo-bridge`): the FIFO memory bridge
+with its 8 KiB read cache is **the default** (`WB_FIFO=1`, and `WB_CACHE`
+follows `WB_FIFO`), on both boards, in simulation and in the synthesis
+flows. `WB_FIFO=0` gives back the synchronous bridge; `WB_CACHE=0` the FIFO
+bridge without the cache. Both stay buildable for comparison. The FIFO
+bridge (`SUN3_WB_FIFO`) is ported from the Sun-2 project. The default Wukong build (Suska, V1, 17.857 MHz) meets timing with
+it: WNS +0.931 ns, against +0.62 ns with the synchronous bridge.
 `rtl/sun3/sun3_fifo_bridge.v` replaces `sun3_wishbone_bridge` with:
 - a request FIFO `{tag, we, adr, dat, sel}` and a response FIFO
   `{tag, dat}` carrying reads only (`sun3_async_fifo.v`, gray pointers);
@@ -187,7 +192,7 @@ The read-back `sys` times are noisy: the run is mostly waiting on the card.
 | `make -C sim board` | the board top (`tb_wukong` + `wukong_top`), behavioural clocks and a Wishbone RAM with `BOARD_LATENCY` (10) wait states; `BOARD_MEM=ddr3` for the real MIG + Micron model instead (calibration and first accesses only: far too slow to boot) |
 | `make -C sim board-check` | as `check`, for the last board run |
 | `make -C syn ip` | generate MIG from `syn/mig/sun3_mig.prj` into `build/ip/<BOARD>/` |
-| `make -C syn bitstream` | Vivado non-project build into `build/syn/vivado/<tag>/`; fails on negative WNS/WHS or a pulse-width violation. Knobs: `BOARD` (v1s1), `CPU`, `ETH` (0), `SCSI` (0), `WB_FIFO` (0), `WB_CACHE` (0), `WB_CACHE_IDX` (9), `MEM_MIB` (16), `ROM` (noparity), `CPU_HZ` (20 MHz), `CPU_DIV` |
+| `make -C syn bitstream` | Vivado non-project build into `build/syn/vivado/<tag>/`; fails on negative WNS/WHS or a pulse-width violation. Knobs: `BOARD` (v1s1), `CPU`, `ETH` (0), `SCSI` (0), `WB_FIFO` (1), `WB_CACHE` (= `WB_FIFO`), `WB_CACHE_IDX` (9), `MEM_MIB` (16), `ROM` (noparity), `CPU_HZ` (20 MHz), `CPU_DIV` |
 | `make -C syn program` / `flash` | JTAG / SPI flash, same knobs (`HW_URL`, default localhost:3121) |
 | `make -C sim check` | grep that run's `console.log` for a good boot (self test, banner, `MEM_MIB` MB installed, prompt). **Does not run anything**: rerun `xsim` first |
 | `make -C syn bitstream BOARD=deca` | the DECA under Quartus (`syn/quartus.tcl`) into `build/syn/quartus/<tag>/sun3.sof`; fails on negative slack (`ALLOW_NEG=1`). Defaults `CPU=rd68021 CPU_DIV=60`; extra knobs `CPU_DUTY`, `BUS_TRACE`, `SEED` |
@@ -282,9 +287,11 @@ of simulated time per minute at 20 MHz with the Suska core.
   the variant Old's LiteX script lists). Of its two ALU files,
   `wf68k30L_alu_new.vhd` is the one used, as in Old. `CPU=rd68021` builds
   `Inputs/RD68021` instead.
-- **Memory.** `sun3_wishbone_bridge` is a Wishbone B4 classic master in the
-  CPU clock, always enabled; memory readiness is expressed by holding
-  `sys_reset`. Main memory is `SUN3_MEM_MIB` MiB at physical 0; type-0
+- **Memory.** By default `sun3_cached_fifo_bridge`: an 8 KiB read cache
+  in front of two dual-clock FIFOs (Step 6), its Wishbone side in the
+  memory controller's clock. With `WB_FIFO=0`, `sun3_wishbone_bridge`: a
+  Wishbone B4 classic master in the CPU clock, always enabled. Either way,
+  memory readiness is expressed by holding `sys_reset`. Main memory is `SUN3_MEM_MIB` MiB at physical 0; type-0
   accesses above it time out (bus error), which is how the PROM sizes memory.
   The bw2 window (top 2 MiB of a 256 MiB memory) is only there with `SUN3_FB`.
 - **No VME.** Old routed VME32 space straight onto Wishbone at the same
@@ -307,7 +314,7 @@ of simulated time per minute at 20 MHz with the Suska core.
   IDELAY reference. MMCM B: 4.915170 MHz for the SCCs (9600 baud from the
   PROM's time constant). `CLKGEN_BEHAVIOURAL` replaces both in fast
   simulation.
-- **Memory, `WB_FIFO=1`**: `sun3_fifo_bridge` (its Wishbone side on
+- **Memory (default, `WB_FIFO=1`)**: the cached FIFO bridge (its Wishbone side on
   `ui_clk`) -> `wb_mig_sync adapter_sync` -> `mig_arb`.
   `syn/wukong_wbfifo.xdc` bounds the FIFO crossings with
   `set_max_delay -datapath_only` and cuts only the reset synchronisers.
@@ -315,7 +322,7 @@ of simulated time per minute at 20 MHz with the Suska core.
   clocks in one clock group. `wukong_wbcdc.xdc` (`WB_FIFO=0`) declares the
   pair asynchronous, which is why its own bounds stay overridden.
   `exceptions_ignored.rpt` lists nothing from `wbridge`.
-- **Memory**: `sun3_wishbone_bridge` (CPU clock) -> `wb_to_mig_ui adapter`
+- **Memory, `WB_FIFO=0`**: `sun3_wishbone_bridge` (CPU clock) -> `wb_to_mig_ui adapter`
   (toggle handshake into `ui_clk`; keep the instance name, the XDC names it)
   -> `mig_arb` (one client; the second is for a frame buffer) -> `sun3_mig`
   (MT41K128M16, 16-bit, DDR3-667, 4:1). About 10 CPU clocks a read.
@@ -403,7 +410,9 @@ From the Sun-2 project's DECA port, which has the history of every choice.
   1000/`CPU_DIV` MHz; altpll B 4.915254 MHz for the SCCs; BrianHG's own PLL
   for DDR3 (250 MHz; its 400 does not build on Quartus 25.1), CMD_CLK
   125 MHz.
-- **Memory**: `sun3_wishbone_bridge` -> `deca_wb_to_ddr3` (toggle handshake
+- **Memory**: by default the cached FIFO bridge, its Wishbone side on
+  CMD_CLK, -> `deca_wb_ddr3_sync` (no crossing); with `WB_FIFO=0`,
+  `sun3_wishbone_bridge` -> `deca_wb_to_ddr3` (toggle handshake
   into CMD_CLK; write mask active high, unlike MIG's) -> BrianHG's soft
   controller (`Inputs/BrianHG-DDR3`, unpatched), caches off,
   `PORT_CACHE_SMART` on (`DDR3_SMART`).

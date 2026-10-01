@@ -62,9 +62,9 @@ romfile="bootrom_sun3_60_v${romver}_${rom}_32bits.vh"
 # the name.
 tag="$cpu-v$romver-$rom-${mem}m-$eth"
 [ "$scsi" = 1 ] && tag="$tag-scsi"
-wbfifo=${SUN3_WB_FIFO:-0}
+wbfifo=${SUN3_WB_FIFO:-1}
 [ "$wbfifo" = 1 ] && tag="$tag-wbfifo"
-wbcache=${SUN3_WB_CACHE:-0}
+wbcache=${SUN3_WB_CACHE:-$wbfifo}
 wbcacheidx=${SUN3_WB_CACHE_IDX:-9}
 if [ "$wbcache" = 1 ]; then
 	if [ "$wbfifo" != 1 ]; then

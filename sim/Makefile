@@ -34,12 +34,12 @@ MEM_MIB     ?= 4
 ETH         ?= none
 # SCSI=1: the on-board SCSI, its disk a file (XSIMARGS="-testplusarg blk_image=<img>")
 SCSI        ?= 0
-# WB_FIFO=1: the FIFO memory bridge (posted writes, tagged reads), the RAM
-# model on its own 83.33 MHz clock
-WB_FIFO     ?= 0
-# WB_CACHE=1 (needs WB_FIFO=1): the read cache in front of it, 2**WB_CACHE_IDX
-# lines of 16 bytes
-WB_CACHE    ?= 0
+# WB_FIFO=1 (default): the FIFO memory bridge (posted writes, tagged reads),
+# the RAM model on its own 83.33 MHz clock; 0: the synchronous bridge
+WB_FIFO     ?= 1
+# WB_CACHE=1 (needs WB_FIFO=1; defaults to it): the read cache in front of it,
+# 2**WB_CACHE_IDX lines of 16 bytes
+WB_CACHE    ?= $(WB_FIFO)
 WB_CACHE_IDX ?= 9
 MEM_LATENCY ?= 0
 MEM_FILL    ?= 00000000
