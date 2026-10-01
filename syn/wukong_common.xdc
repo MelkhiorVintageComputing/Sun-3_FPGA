@@ -74,19 +74,28 @@ set_property -dict {PACKAGE_PIN A5 IOSTANDARD LVCMOS33} [get_ports {extra_leds0[
 # They are not: the crossings that exist are wb_to_mig_ui's handshake, the
 # SCCs' own synchronisers and reset_sync.
 #
-# NOTE (from the Sun-2 project): set_clock_groups outranks set_max_delay, so the
-# bounds in wukong_wbcdc.xdc are reported as overridden and constrain nothing.
-# build.tcl writes exceptions_ignored.rpt so this stays visible.
+# NOTE (from the Sun-2 project): set_clock_groups outranks set_max_delay, so a
+# bound between two clocks of different groups constrains nothing.  build.tcl
+# writes exceptions_ignored.rpt so this stays visible.  For that reason the CPU
+# and MIG clocks are in one group here, and the pair is settled by the memory
+# path's own file: wukong_wbcdc.xdc declares them asynchronous (as before),
+# wukong_wbfifo.xdc (WB_FIFO=1) bounds each crossing of the FIFO bridge and
+# cuts only the reset synchronisers, so its bounds hold and any other path
+# between the two is timed -- and fails loudly -- rather than ignored.
 set cpu_clk    [get_clocks -of_objects [get_pins clkgen/mmcm_a/CLKOUT1]]
 set serial_clk [get_clocks -of_objects [get_pins clkgen/mmcm_b/CLKOUT0]]
 set mig_clk    [get_clocks -of_objects [get_pins clkgen/mmcm_a/CLKOUT0]]
+set mig_clks   [get_clocks -include_generated_clocks $mig_clk]
+# The two together, without `concat' (an XDC rejects it, and drops the whole
+# set_clock_groups with only a critical warning).
+set cpu_mig_clks [get_clocks -include_generated_clocks \
+    -of_objects [get_pins {clkgen/mmcm_a/CLKOUT1 clkgen/mmcm_a/CLKOUT0}]]
 
 # clk50 is in here too: the reset assembly and the hold counter run on it.
 set_clock_groups -asynchronous \
     -group [get_clocks clk50] \
-    -group $cpu_clk \
     -group $serial_clk \
-    -group [get_clocks -include_generated_clocks $mig_clk]
+    -group $cpu_mig_clks
 
 # The PHY's MII clocks, and the Ethernet pins, are in wukong_eth.xdc, which
 # build.tcl reads only with ETH=1: an XDC cannot say `if', and constraints on

@@ -52,6 +52,8 @@ tag="$BOARD-$BOARD_MEM-$cpu-v$romver-$rom-${mem}m"
 [ "$BOARD_MEM" = fast ] && [ "$lat" != 10 ] && tag="$tag-lat$lat"
 [ "$BOARD_CLKGEN" = real ] && [ "$BOARD_MEM" = fast ] && tag="$tag-mmcm"
 [ "$hz" != 20000000 ] && tag="$tag-cpu$((hz / 1000000))"
+wbfifo=${SUN3_WB_FIFO:-0}
+[ "$wbfifo" = 1 ] && tag="$tag-wbfifo"
 for d in $SUN3_DEFINES; do tag="$tag-${d//=/_}"; done
 rundir="$top/build/sim/board-$tag"
 mkdir -p "$rundir"
@@ -63,6 +65,7 @@ if [ ! -e "$top/build/rom/$romfile" ]; then
 fi
 
 defargs=(-d SUN3_SIM -d "SUN3_CPU_HZ=$hz" -d "SUN3_MEM_MIB=$mem" -d "SUN3_BOOTROM_FILE=\"$romfile\"")
+[ "$wbfifo" = 1 ] && defargs+=(-d SUN3_WB_FIFO)
 for d in $SUN3_DEFINES; do defargs+=(-d "$d"); done
 
 if [ "$BOARD" = deca ] && { [ "$BOARD_MEM" != fast ] || [ "$BOARD_CLKGEN" != behavioural ]; }; then
@@ -113,7 +116,8 @@ else
 fi
 incargs=()
 if [ "$BOARD_MEM" = ddr3 ]; then
-	board_src+=("$top/boards/Wukong/wb_to_mig_ui.sv" "$top/boards/Wukong/mig_arb.sv")
+	board_src+=("$top/boards/Wukong/wb_to_mig_ui.sv" "$top/boards/Wukong/wb_mig_sync.sv"
+	            "$top/boards/Wukong/mig_arb.sv")
 	# MIG's RTL, with the simulation top (SIM_BYPASS_INIT_CAL="FAST") instead
 	# of the synthesis one: both define the same module.
 	mapfile -t mig_src < <(find "$mig" -name '*.v' -o -name '*.sv' \

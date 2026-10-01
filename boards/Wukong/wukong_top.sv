@@ -20,8 +20,14 @@
 //
 //   sun3_top --Wishbone (cpu_clk)-- wb_to_mig_ui adapter --(ui_clk)-- mig_arb -- MIG
 //
+// or, with SUN3_WB_FIFO, the crossing inside the machine's FIFO bridge:
+//
+//   sun3_top --Wishbone (ui_clk)-- wb_mig_sync adapter_sync -- mig_arb -- MIG
+//
 // Options (sun3_config.vh / syn/build.tcl):
 //   SUN3_ETH_WISH7990   the Wish7990 on the board's RTL8211EG, run as MII
+//   SUN3_WB_FIFO        the FIFO bridge (posted writes), its Wishbone side on
+//                       ui_clk
 //   BOARD_MEM_FAST      simulation only: no MIG, the Wishbone port and the
 //                       CPU clock and reset come out to the testbench
 //
@@ -268,6 +274,23 @@ module wukong_top #(
    // ------------------------------------------------------------------
    wire        wb_cyc, wb_stb, wb_we, wb_ack;
    wire [29:0] wb_adr;
+
+   // The Wishbone port's clock.  The synchronous bridge runs it on cpu_clk and
+   // wb_to_mig_ui crosses to MIG; the FIFO bridge (SUN3_WB_FIFO) crosses inside
+   // itself and runs it on MIG's ui_clk, so wb_mig_sync needs no crossing.
+   // ui_clk is declared here, ahead of its first use, for xvlog's sake.
+`ifndef BOARD_MEM_FAST
+   wire ui_clk, ui_clk_sync_rst;
+`endif
+`ifdef SUN3_WB_FIFO
+ `ifdef BOARD_MEM_FAST
+   wire wb_side_clk = cpu_clk;
+   wire wb_side_rst = sys_reset;
+ `else
+   wire wb_side_clk = ui_clk;
+   wire wb_side_rst = ui_clk_sync_rst;
+ `endif
+`endif
    wire [31:0] wb_dat_m2s, wb_dat_s2m;
    wire [3:0]  wb_sel;
    wire [7:0]  leds, todebug;
@@ -360,6 +383,11 @@ module wukong_top #(
        .wb_we_o     (wb_we),
        .wb_dat_i    (wb_dat_s2m),
        .wb_ack_i    (wb_ack)
+`ifdef SUN3_WB_FIFO
+       ,
+       .wb_clk_i    (wb_side_clk),
+       .wb_rst_i    (wb_side_rst)
+`endif
    );
 
    // ------------------------------------------------------------------
@@ -381,8 +409,6 @@ module wukong_top #(
 
 `else
 
-   wire         ui_clk, ui_clk_sync_rst;
-
    wire [27:0]  app_addr;
    wire [2:0]   app_cmd;
    wire         app_en, app_rdy;
@@ -397,6 +423,16 @@ module wukong_top #(
    wire [127:0] c0_wdata, c0_rdata, c1_rdata;
    wire [15:0]  c0_wmask;
 
+`ifdef SUN3_WB_FIFO
+   wb_mig_sync adapter_sync (
+       .wb_cyc_i (wb_cyc), .wb_stb_i (wb_stb), .wb_adr_i (wb_adr),
+       .wb_dat_i (wb_dat_m2s), .wb_sel_i (wb_sel), .wb_we_i (wb_we),
+       .wb_dat_o (wb_dat_s2m), .wb_ack_o (wb_ack), .wb_line_o (),
+
+       .c_addr (c0_addr), .c_we (c0_we), .c_wdata (c0_wdata), .c_wmask (c0_wmask),
+       .c_req (c0_req), .c_done (c0_done), .c_rdata (c0_rdata)
+   );
+`else
    // Keep the instance name: syn/wukong_wbcdc.xdc names adapter/* by path.
    wb_to_mig_ui adapter (
        .clk_wb   (cpu_clk),
@@ -411,6 +447,7 @@ module wukong_top #(
        .c_addr (c0_addr), .c_we (c0_we), .c_wdata (c0_wdata), .c_wmask (c0_wmask),
        .c_req (c0_req), .c_done (c0_done), .c_rdata (c0_rdata)
    );
+`endif
 
    // One client for now; the second port is for a frame buffer's scan-out.
    assign c1_addr = 28'h0;

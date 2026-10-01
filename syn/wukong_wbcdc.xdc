@@ -16,6 +16,11 @@
 # built at CPU_HZ=40000000 -- leaving these four bounds 3.2x too loose without
 # failing, because they are upper bounds on datapaths rather than clock
 # constraints.
+# The CPU and MIG clocks, asynchronous, as they always were with this adapter
+# (wukong_common.xdc leaves the pair to this file).  This outranks the bounds
+# below, which therefore stay documentation: exceptions_ignored.rpt lists them.
+set_clock_groups -asynchronous -group $cpu_clk -group $mig_clks
+
 set cpu_period [get_property PERIOD $cpu_clk]
 set ui_period  12.000
 

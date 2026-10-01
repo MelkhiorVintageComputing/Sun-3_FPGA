@@ -12,6 +12,11 @@
 //                        target, an Am9516 subset), at OBIO 0x140000, with the
 //                        disk's block seam brought out to the board
 //   SUN3_HAS_DVMA        derived, not set: a DVMA master exists (either of the two)
+//   SUN3_WB_FIFO         the memory bridge through two dual-clock FIFOs
+//                        (sun3_fifo_bridge.v): writes acknowledged when queued,
+//                        reads matched by tag, the Wishbone side on its own
+//                        clock (sun3_top's wb_clk_i / wb_rst_i); otherwise the
+//                        synchronous sun3_wishbone_bridge
 //   SUN3_FB              the on-board bw2 video memory, at the top of DDR3
 //                        (on unless SUN3_NO_FB).  Every real 3/60 has it and the PROM assumes it
 //                        (without it the monitor's `h' draws into an

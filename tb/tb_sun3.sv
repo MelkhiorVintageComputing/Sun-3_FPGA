@@ -90,6 +90,19 @@ module tb_sun3 #(
    wire        phy_tx_en, phy_tx_er, phy_reset_n;
 `endif
 
+`ifdef SUN3_WB_FIFO
+   // The FIFO bridge's Wishbone side runs in the memory controller's clock:
+   // MIG's ui_clk on the Wukong, 83.33 MHz, stood in for here (MEM_LATENCY
+   // then counts its cycles), with its own reset released from sys_reset.
+   logic wb_clk = 1'b0;
+   always #6.0 wb_clk = ~wb_clk;
+   logic wb_rst = 1'b1;
+   always @(posedge wb_clk) wb_rst <= sys_reset;
+   wire mem_clk = wb_clk, mem_rst = wb_rst;
+`else
+   wire mem_clk = CLK, mem_rst = sys_reset;
+`endif
+
 `ifdef SUN3_SCSI
    // The SCSI disk: a file (+blk_image=<file>), behind the block seam.
    wire        blk_start, blk_we, blk_done, blk_err, blk_ready, blk_buf_we;
@@ -156,14 +169,19 @@ module tb_sun3 #(
       .wb_we_o     (wb_we),
       .wb_dat_i    (wb_dat_r),
       .wb_ack_i    (wb_ack)
+`ifdef SUN3_WB_FIFO
+      ,
+      .wb_clk_i    (wb_clk),
+      .wb_rst_i    (wb_rst)
+`endif
    );
 
    // ---- main memory -------------------------------------------------------
    wire [127:0] wb_line_unused;
 
    wb_ram_model #(.ACK_LATENCY(MEM_LATENCY), .FILL(MEM_FILL)) mem (
-      .clk      (CLK),
-      .reset    (sys_reset),
+      .clk      (mem_clk),
+      .reset    (mem_rst),
       .wb_cyc_i (wb_cyc),
       .wb_stb_i (wb_stb),
       .wb_adr_i (wb_adr),
