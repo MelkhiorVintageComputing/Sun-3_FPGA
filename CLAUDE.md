@@ -220,8 +220,10 @@ it (`bwtwo0 at obmem 0xff000000 pri 4`, `resolution 1152 x 900`).
   scan-out on `mig_arb` client 1, pins and clock group in
   `syn/wukong_hdmi.xdc`, a netlist check for `hdmiclk`. On the V3 (-1) the
   540.625 MHz serialiser clock is 0.305 ns over the BUFG's minimum period:
-  the build needs `ALLOW_PW=1` (otherwise WNS +0.611 ns). Not yet seen on
-  a monitor.
+  the build needs `ALLOW_PW=1` (otherwise WNS +0.611 ns). **It works on
+  the bench monitor regardless** (`BOARD=v3 CPU=rd68021 CPU_DIV=30 ETH=1
+  SCSI=1 VIDEO=1 ALLOW_PW=1`, 33.33 MHz): picture right, SunOS boots from
+  the card with `bwtwo0`.
 - Tests: `make -C sim scanout` (every pixel of a frame against a pattern
   written from the Architecture Manual, the border, 900*9 beats a frame,
   EN.VIDEO blanking; the Sun-2 pixel order or the opposite polarity fail
