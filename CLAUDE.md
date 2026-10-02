@@ -182,7 +182,7 @@ multi-user, fsck clean:
 
 The read-back `sys` times are noisy: the run is mostly waiting on the card.
 
-Step 7 (branch `framebuffer`): the 3/60's bw2 on HDMI (`VIDEO=1`,
+Step 7 (done, merged from branch `framebuffer`): the 3/60's bw2 on HDMI (`VIDEO=1`,
 `SUN3_VIDEO`), ported from the Sun-2 project. **On the DECA the screen
 works** ("looks perfect" on the bench monitor), and SunOS 4.1.1 boots with
 it (`bwtwo0 at obmem 0xff000000 pri 4`, `resolution 1152 x 900`).
@@ -223,7 +223,8 @@ it (`bwtwo0 at obmem 0xff000000 pri 4`, `resolution 1152 x 900`).
   the build needs `ALLOW_PW=1` (otherwise WNS +0.611 ns). **It works on
   the bench monitor regardless** (`BOARD=v3 CPU=rd68021 CPU_DIV=30 ETH=1
   SCSI=1 VIDEO=1 ALLOW_PW=1`, 33.33 MHz): picture right, SunOS boots from
-  the card with `bwtwo0`.
+  the card with `bwtwo0`, and with `FB_CONSOLE=1` the screen console
+  behaves as on the DECA.
 - Tests: `make -C sim scanout` (every pixel of a frame against a pattern
   written from the Architecture Manual, the border, 900*9 beats a frame,
   EN.VIDEO blanking; the Sun-2 pixel order or the opposite polarity fail
