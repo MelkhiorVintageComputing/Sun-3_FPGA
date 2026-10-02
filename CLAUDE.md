@@ -231,6 +231,16 @@ it (`bwtwo0 at obmem 0xff000000 pri 4`, `resolution 1152 x 900`).
   it), `vtiming`, `adv7513`. `tb_sun3 +fb_dump` (`+fb_dump_ms=<t>`) writes
   the window, `tools/fbshot` renders it through `fb_scanout` to a PNG.
 
+Memory: a 3/60 takes at most 24 MiB (the PROM's sizing goes wrong above
+that). `MEM_MIB=24` works on the V3 (33.33 MHz, ETH+SCSI+VIDEO, WNS
++0.789 ns): the PROM reports "24MB memory installed", SunOS sees `mem =
+24576K` (23.5 MB available), and a RAM test (20 MiB in one process, then
+two 12 MiB processes at once, forcing paging) finds no wrong word. The bw2
+window sits at 254-256 MiB of DDR3, far above main memory. Careful when
+writing such a test with SunOS's `cc -O`: a pattern like `i * 69069`
+overflows a 32-bit long, and the optimiser's strength-reduced loop then
+stops early, which reads back as zeros and looks like a memory fault.
+
 ## Commands
 
 | command | what |
@@ -565,6 +575,20 @@ installed", then SunOS 4.1.1 from the card multi-user (`zs0`, `zs1`,
 `le0`, pings). In simulation (`make -C sim xsim CPU=rd68021 ROM_VER=3.0.1
 ROM=noparity TIMEOUT_MS=20000`, no fastboot list) it reaches `>` at
 4,667 ms simulated, 1 h 18 min wall clock, and `check` passes.
+
+**Use Rev 1.9 with a screen; 3.0.1's screen output does not work here.**
+3.0.1 looks for a frame buffer only if the EEPROM's console byte (0x1F) is
+not ttya/ttyb (0x10/0x11): the search at 0x0FEF1F1E tries the EEPROM's type,
+then the P4 colour board (0x20), type 0x12, then the on-board bw2 (0). So
+with the console on serial (`FB_CONSOLE=0`) it never finds the bw2, prints
+"Model Sun-3/60C/G" instead of "60M", and never sets EN.VIDEO (System
+Enable reads 0xA0): the monitor syncs to a black screen. With
+`FB_CONSOLE=1` the screen turns white but no text is drawn, by the PROM or
+by SunOS, although SunOS boots, attaches `bwtwo0` and takes console input
+from ttya. Not investigated further. Possibly the missing keyboard, or the
+search settling on another frame-buffer type; real 3.0.1 probes the P4
+register at OBMEM 0xFF300000 (monitor VA 0x0FE0C000) first. Rev 1.9
+always probes the bw2 and works with either console setting.
 
 **`k2` after SunOS hung (fixed).** Under 1.9 and 3.0.1 alike, `k2`
 rebooted fine from a fresh PROM but, after SunOS had run and been
