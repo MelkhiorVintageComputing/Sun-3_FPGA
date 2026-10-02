@@ -151,7 +151,11 @@ white but nothing is drawn. Rev 1.9 works in both cases.
 | `tools/` | PROM preparation, console and debug tools, test programs |
 | `patches/` | patches applied to copies of third-party inputs |
 | `Inputs/` | third-party cores and reference documents (git submodules), never edited |
+| `ref_bitstreams/` | tested reference bitstreams, zipped, with how they were built |
 | `build/` | everything generated |
+
+`ref_bitstreams/` keeps tested bitstreams with their provenance (commit,
+options, test results), so a board can be brought up without a toolchain.
 
 `CLAUDE.md` is the detailed engineering log: every design decision, measured
 result, debugging aid and trap found along the way.
