@@ -27,6 +27,10 @@
 //                        (on unless SUN3_NO_FB).  Every real 3/60 has it and the PROM assumes it
 //                        (without it the monitor's `h' draws into an
 //                        unmapped page).  It does not move the console.
+//   SUN3_VIDEO           the bw2 on the board's HDMI output (fb_scanout.sv,
+//                        VESA 1280x1024@60 with 1152x900 centred; needs
+//                        SUN3_FB): EN.VIDEO enables it, its vertical blanking
+//                        is the level-4 video interrupt (V_INT)
 //   SUN3_FB_CONSOLE      the EEPROM names the screen as the console (needs
 //                        SUN3_FB and a video output); otherwise serial A
 //   SUN3_MEM_MIB         installed main memory, in MiB

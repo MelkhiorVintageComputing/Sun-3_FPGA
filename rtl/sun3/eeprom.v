@@ -25,7 +25,7 @@ module eeprom(input CLK,
 	for (a = 0; a < 2048; a = a + 1) sram[a] = 8'h00;
 	sram[11'h014] = `SUN3_MEM_MIB; // megabytes of memory installed
 	sram[11'h015] = 8'h00; // memory tested
-	sram[11'h016] = 8'h20; // 1280x1024 (0x00: 1152x900)
+	sram[11'h016] = 8'h00; // monitor: 1152x900, the 3/60's bw2 (0x20 was 1280x1024)
 	// 0x17: watchdog action ?
 	sram[11'h018] = 8'h12; // boot from eeprom-specified device
 	sram[11'h019] = 8'h73; // boot device (2 bytes)

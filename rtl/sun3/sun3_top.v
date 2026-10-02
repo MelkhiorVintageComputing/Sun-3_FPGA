@@ -71,6 +71,7 @@ module sun3_top(/* clock, reset */
 	   output wire 	     en_boot,
 	   input wire 	     diag_switch,
 	   output wire [7:0] todebug,
+	   output wire 	     fb_video_en,  // EN.VIDEO (System Enable bit 3), for a scan-out
 
 	   /* wishbone */
 	   output wire 	      wb_cyc_o,
@@ -211,6 +212,7 @@ module sun3_top(/* clock, reset */
 		  .en_boot(en_boot),
 		  .diag_switch(diag_switch),
 		  .todebug(todebug),
+		  .fb_video_en(fb_video_en),
 
 		  // wishbone
 		  .wb_cyc_o(wb_cyc_o),

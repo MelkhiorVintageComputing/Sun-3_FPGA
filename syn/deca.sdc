@@ -41,6 +41,10 @@ set_false_path -from [get_ports {KEY[*] SW[*]}]
 # Outputs nothing samples on a clock: LEDs, headers, the PHY's reset and
 # management pins.
 set_false_path -to   [get_ports {LED[*] GPIO0_D[*] GPIO1_D[*]}]
+# The HDMI pins sit idle without VIDEO=1; with it, deca_video.sdc constrains
+# them instead (later constraints win).
+set_false_path -to   [get_ports {HDMI_TX_D[*] HDMI_TX_CLK HDMI_TX_DE HDMI_TX_HS HDMI_TX_VS HDMI_I2C_SCL HDMI_I2C_SDA}]
+set_false_path -from [get_ports {HDMI_TX_INT HDMI_I2C_SCL HDMI_I2C_SDA}]
 set_false_path -to   [get_ports {NET_RESET_n NET_PCF_EN NET_MDC}]
 set_false_path -from [get_ports NET_MDIO]
 set_false_path -to   [get_ports NET_MDIO]

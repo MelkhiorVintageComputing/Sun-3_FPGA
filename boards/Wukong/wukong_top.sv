@@ -71,6 +71,15 @@ module wukong_top #(
     inout  wire        phy_mdio,
 `endif
 
+`ifdef SUN3_VIDEO
+    // The bw2 on the board's HDMI connector, TMDS driven by the FPGA
+    // (syn/wukong_hdmi.xdc).
+    output wire [2:0]  tmds_p,
+    output wire [2:0]  tmds_n,
+    output wire        tmds_clk_p,
+    output wire        tmds_clk_n,
+`endif
+
 `ifdef SUN3_SCSI
     // The micro-SD slot (J9 on a V3; a V1 has none), in SPI mode, for the
     // on-board SCSI's disk.  Pins in syn/wukong_sd_v3.xdc, from the Sun-2
@@ -296,6 +305,8 @@ module wukong_top #(
    wire [3:0]  wb_sel;
    wire [127:0] wb_line_s2m;          // the read's whole line, for the cached bridge
    wire [7:0]  leds, todebug;
+   wire        fb_video_en;    // EN.VIDEO, for the scan-out
+   wire        v_int;          // the video interrupt (pixel clock; sun3_fpga syncs it)
    wire        en_boot;
 
    assign diag_leds0  = leds;
@@ -373,11 +384,12 @@ module wukong_top #(
        .blk_buf_addr  (blk_rsp.buf_addr),
        .blk_buf_wdata (blk_rsp.buf_wdata),
 `endif
-       .V_INT       (1'b0),
+       .V_INT       (v_int),         // vertical blanking, with SUN3_VIDEO
        .leds        (leds),
        .en_boot     (en_boot),
        .diag_switch (diag_switch),
        .todebug     (todebug),
+       .fb_video_en (fb_video_en),
        .wb_cyc_o    (wb_cyc),
        .wb_stb_o    (wb_stb),
        .wb_adr_o    (wb_adr),
@@ -411,6 +423,11 @@ module wukong_top #(
    assign cpu_clk_o   = cpu_clk;
    assign sys_reset_o = sys_reset;
    assign init_calib_complete = 1'b1;   // nothing to calibrate
+   assign v_int = 1'b0;                 // no scan-out without the MIG path
+ `ifdef SUN3_VIDEO
+   assign tmds_p = 3'b000; assign tmds_n = 3'b111;
+   assign tmds_clk_p = 1'b0; assign tmds_clk_n = 1'b1;
+ `endif
 
 `else
 
@@ -454,9 +471,84 @@ module wukong_top #(
    );
 `endif
 
-   // One client for now; the second port is for a frame buffer's scan-out.
+`ifdef SUN3_VIDEO
+   // ------------------------------------------------------------------
+   // The bw2 on HDMI: fb_scanout on mig_arb's client 1 (read-only, in
+   // ui_clk), VESA 1280x1024@60 from hdl-util's hdmi (VIC 127, from
+   // patches/hdmi), the 1152x900 screen centred.  From the Sun-2 project.
+   // ------------------------------------------------------------------
+   wire clk_pixel, clk_pixel_x5, hdmi_locked;
+
+   hdmi_clkgen hdmiclk (
+       .clk50        (clk50_g),
+       .reset        (board_reset),
+       .clk_pixel    (clk_pixel),
+       .clk_pixel_x5 (clk_pixel_x5),
+       .locked       (hdmi_locked)
+   );
+
+   wire pix_rst;
+   reset_sync rst_pix (
+       .clk          (clk_pixel),
+       .rst_async_in (board_reset | ~hdmi_locked),
+       .rst_sync_out (pix_rst)
+   );
+
+   // hdmi.sv sizes cx/cy from the mode: 12 and 11 bits for the 1688x1066
+   // raster of VIC 127 (patches/hdmi widens BIT_HEIGHT for it; without that
+   // the height truncates silently).
+   localparam int SCR_W = 1280, SCR_H = 1024;
+   wire [11:0] cx;
+   wire [10:0] cy;
+   wire [23:0] rgb;
+   wire [2:0]  tmds;
+   wire        tmds_clock;
+
+   fb_scanout #(.FB_APP_BASE(28'h7F00000),    // byte 0x0FE00000, the bridges' window
+                .SCREEN_W(SCR_W), .SCREEN_H(SCR_H)) scanout (
+       .ui_clk (ui_clk), .ui_rst (ui_clk_sync_rst),
+       .c_addr (c1_addr), .c_req (c1_req), .c_done (c1_done), .c_rdata (c1_rdata),
+       .clk_pixel (clk_pixel), .pix_rst (pix_rst),
+       .cx (cx), .cy (cy), .video_en (fb_video_en), .rgb (rgb)
+   );
+
+   // The retrace interrupt: high through the vertical blanking.
+   reg vblank = 1'b0;
+   always @(posedge clk_pixel) vblank <= (cy >= SCR_H);
+   assign v_int = vblank;
+
+   // DVI rather than HDMI: no audio, and every HDMI sink accepts it.
+   hdmi #(.VIDEO_ID_CODE(127),
+          .DVI_OUTPUT(1'b1),
+          .VIDEO_REFRESH_RATE(60.0),
+          .IT_CONTENT(1'b1),
+          .VENDOR_NAME({"Sun     "}),
+          .PRODUCT_DESCRIPTION({"Sun-3/60        "})
+   ) hdmi_tx (
+       .clk_pixel_x5 (clk_pixel_x5),
+       .clk_pixel    (clk_pixel),
+       .clk_audio    (clk_pixel),       // unused with DVI_OUTPUT
+       .reset        (pix_rst),
+       .rgb          (rgb),
+       .audio_sample_word ('{16'd0, 16'd0}),
+       .tmds         (tmds),
+       .tmds_clock   (tmds_clock),
+       .cx           (cx),
+       .cy           (cy),
+       .frame_width  (), .frame_height (), .screen_width (), .screen_height ()
+   );
+
+   // TMDS_33 on a 3.3 V HR bank.
+   OBUFDS obufds_d0  (.I(tmds[0]),    .O(tmds_p[0]), .OB(tmds_n[0]));
+   OBUFDS obufds_d1  (.I(tmds[1]),    .O(tmds_p[1]), .OB(tmds_n[1]));
+   OBUFDS obufds_d2  (.I(tmds[2]),    .O(tmds_p[2]), .OB(tmds_n[2]));
+   OBUFDS obufds_clk (.I(tmds_clock), .O(tmds_clk_p), .OB(tmds_clk_n));
+`else
+   // No video output: the scan-out client never asks.
    assign c1_addr = 28'h0;
    assign c1_req  = 1'b0;
+   assign v_int   = 1'b0;
+`endif
 
    mig_arb arbiter (
        .ui_clk (ui_clk), .ui_rst (ui_clk_sync_rst),

@@ -70,3 +70,7 @@ if {[string length $raw] >= 66} {
     puts [format "disk   : ready=%s last_err=%s blocks=%d (%.1f GiB)" \
             $d_ready $d_err $d_count [expr {$d_count * 512.0 / 1073741824.0}]]
 }
+if {[string length $raw] >= 68} {
+    puts [format "hdmi   : adv7513 cfg_done=%s nak=%s (both 0 without VIDEO=1)" \
+            [string index $raw 66] [string index $raw 67]]
+}

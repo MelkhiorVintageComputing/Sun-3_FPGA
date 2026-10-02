@@ -98,10 +98,10 @@ check:
 # Board-layer unit tests (sim/run_unit.sh): the DECA's DDR3 adapter and its
 # JTAG console bridge, each against a model of the IP it talks to; the FIFO
 # bridge, its dual-clock FIFO and its DECA adapter.
-decaddr3 decaconsole asyncfifo fifobridge cachedbridge decaddr3sync:
+decaddr3 decaconsole asyncfifo fifobridge cachedbridge decaddr3sync scanout vtiming adv7513:
 	./run_unit.sh $@
 
 clean:
 	rm -rf $(TOP)/build/sim
 
-.PHONY: xsim check board board-check decaddr3 decaconsole asyncfifo fifobridge cachedbridge decaddr3sync clean
+.PHONY: xsim check board board-check decaddr3 decaconsole asyncfifo fifobridge cachedbridge decaddr3sync scanout vtiming adv7513 clean
