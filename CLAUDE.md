@@ -203,7 +203,11 @@ it (`bwtwo0 at obmem 0xff000000 pri 4`, `resolution 1152 x 900`).
   RS232 Port A as input!", so input stays on ttya (seen in simulation,
   `make -C sim xsim CPU=rd68021 DEFINES=SUN3_FB_CONSOLE XSIMARGS=
   "-testplusarg fb_dump"`, then `tools/fbshot`: logo, banner and `>`
-  render correctly). What SunOS does with that is untried.
+  render correctly). On the DECA (`VIDEO=1 FB_CONSOLE=1`) SunOS 4.1.1
+  does the same: boot messages, `login:` and the shell on the monitor,
+  typed into from ttya (serial shows nothing; `who` lists `root console`),
+  and the machine reachable by telnet. Halt it over telnet or by typing
+  `sync; sync; halt` blind on serial.
 - DECA: `deca_vidclk` (4th PLL, 108.000 MHz), `video_timing`,
   `deca_hdmi_out` (clock inverted for the ADV7513), `deca_adv7513_init`
   (I2C, DVI mode), the scan-out on BrianHG port 1 behind the
