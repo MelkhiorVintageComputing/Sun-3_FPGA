@@ -182,6 +182,55 @@ multi-user, fsck clean:
 
 The read-back `sys` times are noisy: the run is mostly waiting on the card.
 
+Step 7 (done, merged from branch `framebuffer`): the 3/60's bw2 on HDMI (`VIDEO=1`,
+`SUN3_VIDEO`), ported from the Sun-2 project. **On the DECA the screen
+works** ("looks perfect" on the bench monitor), and SunOS 4.1.1 boots with
+it (`bwtwo0 at obmem 0xff000000 pri 4`, `resolution 1152 x 900`).
+- `rtl/sun3/fb_scanout.sv`: a ping-pong line buffer (one M9K/BRAM),
+  9 beats a line, read from DDR3 at byte 0x0FE00000 (the bridges' bw2
+  window). VESA 1280x1024@60 with the 1152x900 screen centred (64 x 62
+  border). 1 = black; the border, and the whole screen while EN.VIDEO
+  (System Enable bit 3, `fb_video_en`) is off, are black.
+- The bit order differs from the Sun-2: the 68020 bus and bridges are
+  32-bit big-endian, so pixel p of a 128-bit beat is bit `{p[6:5],
+  ~p[4:0]}` (the Sun-2's 16-bit bridge needed `{p[6:4], ~p[3:0]}`).
+- The vertical blanking drives `V_INT` (level 4, Architecture Manual
+  5.3.4), synchronised in `sun3_fpga`.
+- The EEPROM's monitor byte (0x016) is now 0x00, 1152x900 (it was 0x20,
+  1280x1024, a LiteX leftover). The console stays on ttya;
+  `FB_CONSOLE=1` (`SUN3_FB_CONSOLE`, needs `VIDEO=1`) moves the output
+  to the screen; with no keyboard the PROM says "No keyboard found: Using
+  RS232 Port A as input!", so input stays on ttya (seen in simulation,
+  `make -C sim xsim CPU=rd68021 DEFINES=SUN3_FB_CONSOLE XSIMARGS=
+  "-testplusarg fb_dump"`, then `tools/fbshot`: logo, banner and `>`
+  render correctly). On the DECA (`VIDEO=1 FB_CONSOLE=1`) SunOS 4.1.1
+  does the same: boot messages, `login:` and the shell on the monitor,
+  typed into from ttya (serial shows nothing; `who` lists `root console`),
+  and the machine reachable by telnet. Halt it over telnet or by typing
+  `sync; sync; halt` blind on serial.
+- DECA: `deca_vidclk` (4th PLL, 108.000 MHz), `video_timing`,
+  `deca_hdmi_out` (clock inverted for the ADV7513), `deca_adv7513_init`
+  (I2C, DVI mode), the scan-out on BrianHG port 1 behind the
+  level-to-strobe adapter. Pins in `deca_pins.qsf` (always assigned, idle
+  without the knob), timing in `deca_video.sdc` (read only with it). ISSP
+  shows `hdmi: adv7513 cfg_done/nak`. ETH+SCSI+VIDEO: 40,879 LE (82%),
+  161 of 182 M9K, WNS +0.505 ns, pixel clock Fmax 154 MHz.
+- Wukong: `hdmi_clkgen` (3rd MMCM, 108.125 / 540.625 MHz), hdl-util's
+  `hdmi` (`Inputs/hdmi`, VIC 127 from `patches/hdmi/0001`, DVI), the
+  scan-out on `mig_arb` client 1, pins and clock group in
+  `syn/wukong_hdmi.xdc`, a netlist check for `hdmiclk`. On the V3 (-1) the
+  540.625 MHz serialiser clock is 0.305 ns over the BUFG's minimum period:
+  the build needs `ALLOW_PW=1` (otherwise WNS +0.611 ns). **It works on
+  the bench monitor regardless** (`BOARD=v3 CPU=rd68021 CPU_DIV=30 ETH=1
+  SCSI=1 VIDEO=1 ALLOW_PW=1`, 33.33 MHz): picture right, SunOS boots from
+  the card with `bwtwo0`, and with `FB_CONSOLE=1` the screen console
+  behaves as on the DECA.
+- Tests: `make -C sim scanout` (every pixel of a frame against a pattern
+  written from the Architecture Manual, the border, 900*9 beats a frame,
+  EN.VIDEO blanking; the Sun-2 pixel order or the opposite polarity fail
+  it), `vtiming`, `adv7513`. `tb_sun3 +fb_dump` (`+fb_dump_ms=<t>`) writes
+  the window, `tools/fbshot` renders it through `fb_scanout` to a PNG.
+
 ## Commands
 
 | command | what |
@@ -203,6 +252,7 @@ The read-back `sys` times are noisy: the run is mostly waiting on the card.
 | `make -C sim asyncfifo` / `fifobridge` / `cachedbridge` / `decaddr3sync` | unit tests of `WB_FIFO=1`: the dual-clock FIFO, the FIFO bridge (posted writes, tags, lanes, against 83 and 7 MHz Wishbone clocks), its read cache against a shadow of memory, the DECA's crossing-free adapter |
 | `make -C sim xsim CPU=rd68021 SCSI=1 XSIMARGS="-testplusarg blk_image=$PWD/build/disk/sunos411-sun3.img"` | with the on-board SCSI and a file as its disk (`tb/blk_file.sv`, first 32 MiB loaded). Always a copy in `build/disk/`, never the original image. Use `STOP_ON` other than `>` past the PROM: the disk label `<SUN300 ...>` has one |
 | `make -C syn bitstream BOARD=v3 CPU=rd68021 CPU_DIV= ETH=1 SCSI=1 [DISK_OFF_MIB=n]` | the Wukong V3 with SCSI, its disk in the micro-SD slot (`syn/wukong_sd_v3.xdc`; a V1 has no slot and is refused) |
+| `make -C syn bitstream BOARD=deca ETH=1 SCSI=1 VIDEO=1` | the DECA with the bw2 on its HDMI port (1280x1024@60) |
 | `make -C syn bitstream BOARD=deca ETH=1 SCSI=1 [DISK_OFF_MIB=n]` | the DECA with SCSI, the disk at n MiB into the micro-SD (`tools/deca_reset.tcl` shows `disk: ready`, size) |
 
 `sim/Makefile` knobs: `CPU=suska|rd68021`, `ROM=fast|noparity|pristine`,

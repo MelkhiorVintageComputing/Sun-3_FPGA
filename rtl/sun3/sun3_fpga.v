@@ -8,6 +8,7 @@
 // Vendor-neutral: no primitives, no IP.  Build options are in sun3_config.vh.
 
 `include "sun3_config.vh"
+`include "sun3_attr.vh"
 
 module sun3_fpga(/* clock, reset */
 		 input 		CLK,
@@ -91,6 +92,7 @@ module sun3_fpga(/* clock, reset */
 		 input 		diag_switch,
 		 //output [2:0]  berrd,
 		 output [7:0] 	todebug,
+		 output 	fb_video_en, // EN.VIDEO, to the board's scan-out
 		 /* wishbone */
 		 output 	wb_cyc_o,
 		 output 	wb_stb_o,
@@ -473,6 +475,7 @@ module sun3_fpga(/* clock, reset */
    assign EN_FPA   = sys_out[1]; // no FPA fitted: stored and read back, nothing more
    assign EN_COPY  = sys_out[2];
    assign EN_VIDEO = sys_out[3];
+   assign fb_video_en = EN_VIDEO;
    assign EN_CACHE = sys_out[4];
    assign EN_SDVMA = sys_out[5];
    assign EN_FPP   = sys_out[6];
@@ -987,6 +990,14 @@ module sun3_fpga(/* clock, reset */
    assign S_IRQ = 1'b0;
 `endif
    
+   // The video interrupt (level 4, autovectored: Architecture Manual 5.3.4):
+   // the board's vertical sync, in the pixel clock, synchronised here.  The
+   // interrupt logic latches it while EN_IRQ4 is set, until software clears
+   // that bit, so a level lasting a few lines is enough.
+   `SUN3_ASYNC_REG reg [1:0] vint_s = 2'b00;
+   always @(posedge CLK) vint_s <= {vint_s[0], V_INT};
+   wire V_INT_s = vint_s[1];
+
    sun3_irq_priority irqenc (.CLK(CLK),
     			     .EN_IRQ7(EN_IRQ7),
 			     .EN_IRQ6(EN_IRQ6),
@@ -997,7 +1008,7 @@ module sun3_fpga(/* clock, reset */
 			     .EN_IRQ1(EN_IRQ1),
 			     .EN_INT(EN_INT),
     			     .RTC(RTC),
-			     .V_INT(V_INT),
+			     .V_INT(V_INT_s),
 			     .SCC_IRQ(SCC_IRQ),
 			     .E_IRQ(E_IRQ),
 			     .PAR_IRQ(PAR_IRQ),

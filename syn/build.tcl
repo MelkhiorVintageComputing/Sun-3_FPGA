@@ -2,7 +2,7 @@
 #
 #   vivado -mode batch -source syn/build.tcl \
 #       -tclargs CPU_HZ CPU_DIV BOARD CPU ETH MEM_MIB ROMFILE ALLOW_PW OUTDIR FB \
-#                SCSI DISK_OFF_MIB WB_FIFO WB_CACHE WB_CACHE_IDX
+#                SCSI DISK_OFF_MIB WB_FIFO WB_CACHE WB_CACHE_IDX VIDEO FB_CONSOLE
 #
 # Run through syn/Makefile, which owns the defaults and the output directory's
 # name (passed in, not recomputed here, so the two cannot disagree).
@@ -18,11 +18,11 @@ set top  [file normalize $here/..]
 
 source $here/boards.tcl
 
-if {[llength $argv] != 15} {
-    puts "ERROR: build.tcl wants 15 arguments (see its header), got [llength $argv]: $argv"
+if {[llength $argv] != 17} {
+    puts "ERROR: build.tcl wants 17 arguments (see its header), got [llength $argv]: $argv"
     exit 1
 }
-lassign $argv cpu_hz cpu_div board cpu eth mem_mib romfile allowpw outdir fb scsi disk_off_mib wb_fifo wb_cache wb_cache_idx
+lassign $argv cpu_hz cpu_div board cpu eth mem_mib romfile allowpw outdir fb scsi disk_off_mib wb_fifo wb_cache wb_cache_idx video fb_console
 
 # CPU_DIV names the MMCM divider directly and wins over CPU_HZ in
 # wukong_clkgen.sv, so from here on cpu_hz is the clock that will exist -- it
@@ -79,6 +79,21 @@ if {$scsi == 1} {
     lappend defines SUN3_SCSI
 }
 if {$fb == 0}          { lappend defines SUN3_NO_FB }
+# The bw2 on the board's HDMI connector (needs its memory, FB=1).
+if {$video == 1} {
+    if {$fb != 1} {
+        puts "ERROR: VIDEO=1 needs FB=1: the screen shows the bw2's memory"
+        exit 1
+    }
+    lappend defines SUN3_VIDEO
+}
+if {$fb_console == 1} {
+    if {$video != 1} {
+        puts "ERROR: FB_CONSOLE=1 needs VIDEO=1: a console nobody can see"
+        exit 1
+    }
+    lappend defines SUN3_FB_CONSOLE
+}
 # The FIFO bridge: its Wishbone side on MIG's ui_clk, wb_mig_sync in place of
 # wb_to_mig_ui.
 if {$wb_fifo == 1}     { lappend defines SUN3_WB_FIFO }
@@ -91,7 +106,7 @@ if {$wb_cache == 1} {
     lappend defines SUN3_WB_CACHE SUN3_WB_CACHE_IDX=$wb_cache_idx
 }
 
-puts "== Sun-3 for Wukong $board ($part), CPU $cpu at $cpu_hz Hz, $mem_mib MiB, PROM $romfile, ETH=$eth, FB=$fb, WB_FIFO=$wb_fifo, WB_CACHE=$wb_cache (IDX $wb_cache_idx) =="
+puts "== Sun-3 for Wukong $board ($part), CPU $cpu at $cpu_hz Hz, $mem_mib MiB, PROM $romfile, ETH=$eth, FB=$fb, WB_FIFO=$wb_fifo, WB_CACHE=$wb_cache (IDX $wb_cache_idx), VIDEO=$video, FB_CONSOLE=$fb_console =="
 if {$scsi == 1} {
     puts "== SCSI disk at $disk_off_mib MiB on the micro-SD ([expr {$disk_off_mib * 2048}] sectors) =="
 }
@@ -182,6 +197,17 @@ lappend sv \
     $top/boards/Wukong/wb_mig_sync.sv \
     $top/boards/Wukong/mig_arb.sv \
     $top/boards/Wukong/wukong_top.sv
+if {$video == 1} {
+    set hd $inputs/hdmi/src
+    lappend sv \
+        $top/rtl/sun3/fb_scanout.sv \
+        $top/boards/Wukong/hdmi_clkgen.sv \
+        $hd/tmds_channel.sv $hd/serializer.sv $hd/packet_assembler.sv \
+        $hd/packet_picker.sv $hd/audio_clock_regeneration_packet.sv \
+        $hd/audio_info_frame.sv $hd/audio_sample_packet.sv \
+        $hd/auxiliary_video_information_info_frame.sv \
+        $hd/source_product_description_info_frame.sv $hd/hdmi.sv
+}
 if {$eth == 1} {
     set w $inputs/Wish7990/src
     lappend sv \
@@ -215,6 +241,10 @@ if {$wb_fifo == 1} {
     read_xdc $here/wukong_wbcdc.xdc
     puts "== read wukong_wbcdc.xdc =="
 }
+if {$video == 1} {
+    read_xdc $here/wukong_hdmi.xdc
+    puts "== read wukong_hdmi.xdc =="
+}
 if {$scsi == 1} {
     read_xdc $here/wukong_sd_$board.xdc
     puts "== read wukong_sd_$board.xdc =="
@@ -246,6 +276,12 @@ report_utilization -file $outdir/post_synth_utilization.rpt
 report_clocks      -file $outdir/clocks.rpt
 
 # The feature knobs have to reach the netlist, not just the command line.
+# With no HDMI clock in the design nothing can violate, so a lost SUN3_VIDEO
+# would pass every gate below (a Sun-2 lesson).
+if {$video == 1 && [llength [get_cells -quiet -hier -filter {NAME =~ *hdmiclk*}]] == 0} {
+    puts "ERROR: VIDEO=1 but the netlist has no HDMI clock generator: SUN3_VIDEO did not reach the RTL"
+    exit 1
+}
 if {$eth == 1 && [llength [get_cells -quiet -hier -filter {NAME =~ *mdio_station*}]] == 0} {
     puts "ERROR: ETH=1 but the netlist has no MDIO station: SUN3_ETH_WISH7990 did not reach the RTL"
     exit 1

@@ -98,6 +98,17 @@ module deca_top #(
     output wire        SD_D0_DIR,       // T22
     output wire        SD_D123_DIR,     // U21
 
+    // HDMI, an ADV7513 in bank 7 (1.8 V): parallel RGB and syncs, set up over
+    // I2C.  Driven idle without SUN3_VIDEO.  From the Sun-2 project.
+    output wire [23:0] HDMI_TX_D,
+    output wire        HDMI_TX_CLK,
+    output wire        HDMI_TX_DE,
+    output wire        HDMI_TX_HS,
+    output wire        HDMI_TX_VS,
+    input  wire        HDMI_TX_INT,
+    inout  wire        HDMI_I2C_SCL,
+    inout  wire        HDMI_I2C_SDA,
+
 `ifdef SUN3_SIM
     output wire        av_address_o,
     output wire        av_chipselect_o,
@@ -236,6 +247,9 @@ module deca_top #(
  `endif
 `endif
    wire [7:0]  leds, todebug;
+   wire        fb_video_en;    // EN.VIDEO, for the scan-out
+   wire        v_int;          // the video interrupt (pixel clock; sun3_fpga syncs it)
+   wire        hdmi_cfg_done, hdmi_cfg_nak;   // the ADV7513's setup, for ISSP
    wire        en_boot;
    wire        sun_tx, sun_rx;
 
@@ -284,11 +298,12 @@ module deca_top #(
        .blk_buf_addr  (blk_rsp.buf_addr),
        .blk_buf_wdata (blk_rsp.buf_wdata),
 `endif
-       .V_INT       (1'b0),
+       .V_INT       (v_int),         // vertical blanking, with SUN3_VIDEO
        .leds        (leds),
        .en_boot     (en_boot),
        .diag_switch (diag_switch),
        .todebug     (todebug),
+       .fb_video_en (fb_video_en),
        .wb_cyc_o    (wb_cyc),
        .wb_stb_o    (wb_stb),
        .wb_adr_o    (wb_adr),
@@ -330,20 +345,24 @@ module deca_top #(
 
 `else
 
-   // One port: the CPU's.  The frame buffer is memory the PROM draws into, not
-   // yet a display, so there is no scan-out port.
+   // Port 0: the CPU's.  Port 1, with SUN3_VIDEO: the bw2 scan-out, read only.
    localparam int PORT_ADDR_SIZE  = 29;    // byte address: 512 MB
    localparam int PORT_CACHE_BITS = 128;
+`ifdef SUN3_VIDEO
+   localparam int N_DDR3 = 2;
+`else
+   localparam int N_DDR3 = 1;
+`endif
 
-   wire                         cmd_busy_a      [0:0];
-   wire                         cmd_ena_a       [0:0];
-   wire                         cmd_write_ena_a [0:0];
-   wire [PORT_ADDR_SIZE-1:0]    cmd_addr_a      [0:0];
-   wire [PORT_CACHE_BITS-1:0]   cmd_wdata_a     [0:0];
-   wire [PORT_CACHE_BITS/8-1:0] cmd_wmask_a     [0:0];
-   wire                         cmd_rready_a    [0:0];
-   wire [PORT_CACHE_BITS-1:0]   cmd_rdata_a     [0:0];
-   wire [7:0]                   cmd_rvec_out_a  [0:0];
+   wire                         cmd_busy_a      [0:N_DDR3-1];
+   wire                         cmd_ena_a       [0:N_DDR3-1];
+   wire                         cmd_write_ena_a [0:N_DDR3-1];
+   wire [PORT_ADDR_SIZE-1:0]    cmd_addr_a      [0:N_DDR3-1];
+   wire [PORT_CACHE_BITS-1:0]   cmd_wdata_a     [0:N_DDR3-1];
+   wire [PORT_CACHE_BITS/8-1:0] cmd_wmask_a     [0:N_DDR3-1];
+   wire                         cmd_rready_a    [0:N_DDR3-1];
+   wire [PORT_CACHE_BITS-1:0]   cmd_rdata_a     [0:N_DDR3-1];
+   wire [7:0]                   cmd_rvec_out_a  [0:N_DDR3-1];
 
 `ifdef SUN3_WB_FIFO
    deca_wb_ddr3_sync #(.PORT_ADDR_SIZE(PORT_ADDR_SIZE),
@@ -403,7 +422,7 @@ module deca_top #(
        .DDR3_SIZE_GB    (4),          // MT41K256M16, the DECA's part
        .DDR3_WIDTH_DQ   (16),
        .DDR3_NUM_CHIPS  (1),
-       .PORT_TOTAL      (1),
+       .PORT_TOTAL      (N_DDR3),
        // No caching: a timeout-based cache in front of a CPU that issues one
        // access at a time buys nothing, and on the Sun-2 it returned a stale
        // word 47 clocks after the write (Sun-2 CLAUDE.md).
@@ -427,11 +446,11 @@ module deca_top #(
        .CMD_addr            (cmd_addr_a),
        .CMD_wdata           (cmd_wdata_a),
        .CMD_wmask           (cmd_wmask_a),
-       .CMD_read_vector_in  ('{1{8'h00}}),
+       .CMD_read_vector_in  ('{N_DDR3{8'h00}}),
        .CMD_read_ready      (cmd_rready_a),
        .CMD_read_data       (cmd_rdata_a),
        .CMD_read_vector_out (cmd_rvec_out_a),
-       .CMD_priority_boost  ('{1{1'b0}}),
+       .CMD_priority_boost  ('{N_DDR3{1'b0}}),
        .SEQ_refresh_hold    (1'b0),
 
        .DDR3_RESET_n (DDR3_RESET_n), .DDR3_CK_p (DDR3_CK_p), .DDR3_CK_n (DDR3_CK_n),
@@ -441,6 +460,126 @@ module deca_top #(
        .DDR3_DQ (DDR3_DQ), .DDR3_DQS_p (DDR3_DQS_p), .DDR3_DQS_n (DDR3_DQS_n)
    );
 
+`ifdef SUN3_VIDEO
+   // ------------------------------------------------------------------
+   // The bw2 on the ADV7513: fb_scanout on BrianHG's port 1 (CMD_CLK),
+   // video_timing's VESA 1280x1024@60 at 108.000 MHz, the 1152x900 screen
+   // centred.  From the Sun-2 project's deca_top, which has the history.
+   // ------------------------------------------------------------------
+   wire clk_pixel, vid_locked;
+   deca_vidclk vidclk (.clk50(MAX10_CLK1_50), .reset(board_reset_raw),
+                       .clk_pixel(clk_pixel), .locked(vid_locked));
+
+   wire pix_rst;
+   reset_sync rst_pix (.clk(clk_pixel),
+                       .rst_async_in(board_reset_raw | ~vid_locked),
+                       .rst_sync_out(pix_rst));
+
+   wire [11:0] fb_cx;
+   wire [10:0] fb_cy;
+   wire        fb_de, fb_hs, fb_vs;
+
+   video_timing vtim (.clk(clk_pixel), .rst(pix_rst),
+                      .cx(fb_cx), .cy(fb_cy),
+                      .de(fb_de), .hsync(fb_hs), .vsync(fb_vs));
+
+   // The retrace interrupt: high through the vertical blanking.
+   reg vblank = 1'b0;
+   always @(posedge clk_pixel) vblank <= (fb_cy >= 11'd1024);
+   assign v_int = vblank;
+
+   // fb_scanout counts in MIG units (2 bytes); BrianHG's port is byte
+   // addressed: {c_addr, 1'b0}.  Byte 0x0FE00000, where deca_wb_ddr3_sync
+   // puts the bridges' window ({wb_adr, 2'b00}).
+   wire [27:0] fb_c_addr;
+   wire        fb_c_req;
+   wire [23:0] fb_rgb;
+
+   fb_scanout #(.FB_APP_BASE(28'h7F00000),
+                .SCREEN_W(1280), .SCREEN_H(1024)) scanout (
+       .ui_clk   (cmd_clk),
+       .ui_rst   (ddr3_rst_out),
+       .c_addr   (fb_c_addr),
+       .c_req    (fb_c_req),
+       .c_done   (cmd_rready_a[1]),
+       .c_rdata  (cmd_rdata_a[1]),
+       .clk_pixel(clk_pixel),
+       .pix_rst  (pix_rst),
+       .cx       (fb_cx),
+       .cy       (fb_cy),
+       .video_en (fb_video_en),
+       .rgb      (fb_rgb));
+
+   // fb_scanout's c_req is a level (MIG's contract); CMD_ena is a one-clock
+   // strobe.  One strobe per beat, never while busy or before calibration,
+   // and not another until the read has come back -- wired straight, every
+   // line shows nine copies of its first 128 pixels (the Sun-2 saw it).
+   reg fb_outstanding;
+   always @(posedge cmd_clk) begin
+      if (ddr3_rst_out)              fb_outstanding <= 1'b0;
+      else if (cmd_ena_a[1])         fb_outstanding <= 1'b1;
+      else if (cmd_rready_a[1])      fb_outstanding <= 1'b0;
+   end
+
+   assign cmd_ena_a[1]       = fb_c_req & ~fb_outstanding
+                             & ~cmd_busy_a[1] & ddr3_ready;
+   assign cmd_write_ena_a[1] = 1'b0;
+   assign cmd_addr_a[1]      = {fb_c_addr, 1'b0};   // MIG units -> bytes
+   assign cmd_wdata_a[1]     = '0;
+   assign cmd_wmask_a[1]     = '0;
+
+   deca_hdmi_out hdmiout (
+       .clk_pixel(clk_pixel), .rst(pix_rst),
+       .rgb(fb_rgb), .de(fb_de), .hsync(fb_hs), .vsync(fb_vs),
+       .hdmi_d(HDMI_TX_D), .hdmi_de(HDMI_TX_DE),
+       .hdmi_hs(HDMI_TX_HS), .hdmi_vs(HDMI_TX_VS), .hdmi_clk(HDMI_TX_CLK));
+
+   // The transmitter's setup runs from the raw 50 MHz, not the pixel PLL, so
+   // it can report a PLL that never locked.
+   wire cfg_rst;
+   reset_sync rst_cfg (.clk(MAX10_CLK1_50), .rst_async_in(board_reset_raw),
+                       .rst_sync_out(cfg_rst));
+
+   wire hdmi_scl_oe, hdmi_sda_oe;
+   wire [7:0] hdmi_cfg_passes;
+
+   deca_adv7513_init hdmicfg (
+       .clk(MAX10_CLK1_50), .rst(cfg_rst),
+       .scl_oe(hdmi_scl_oe), .sda_oe(hdmi_sda_oe), .sda_i(HDMI_I2C_SDA),
+       .int_n(HDMI_TX_INT),
+       .cfg_done(hdmi_cfg_done), .cfg_nak(hdmi_cfg_nak),
+       .cfg_passes(hdmi_cfg_passes));
+
+   assign HDMI_I2C_SCL = hdmi_scl_oe ? 1'b0 : 1'bz;
+   assign HDMI_I2C_SDA = hdmi_sda_oe ? 1'b0 : 1'bz;
+`endif
+
+`endif
+
+`ifndef SUN3_VIDEO
+   // No display: the transmitter's inputs held at a defined idle.
+   assign HDMI_TX_D    = 24'h0;
+   assign HDMI_TX_CLK  = 1'b0;
+   assign HDMI_TX_DE   = 1'b0;
+   assign HDMI_TX_HS   = 1'b0;
+   assign HDMI_TX_VS   = 1'b0;
+   assign HDMI_I2C_SCL = 1'bz;
+   assign HDMI_I2C_SDA = 1'bz;
+   assign v_int        = 1'b0;
+   assign hdmi_cfg_done = 1'b0;
+   assign hdmi_cfg_nak  = 1'b0;
+`elsif BOARD_MEM_FAST
+   // The board simulation has no DDR3 controller to scan out of.
+   assign HDMI_TX_D    = 24'h0;
+   assign HDMI_TX_CLK  = 1'b0;
+   assign HDMI_TX_DE   = 1'b0;
+   assign HDMI_TX_HS   = 1'b0;
+   assign HDMI_TX_VS   = 1'b0;
+   assign HDMI_I2C_SCL = 1'bz;
+   assign HDMI_I2C_SDA = 1'bz;
+   assign v_int        = 1'b0;
+   assign hdmi_cfg_done = 1'b0;
+   assign hdmi_cfg_nak  = 1'b0;
 `endif
 
    // ------------------------------------------------------------------
@@ -644,7 +783,7 @@ module deca_top #(
    altsource_probe #(
        .sld_auto_instance_index ("YES"),
        .instance_id             ("SUN3"),
-       .probe_width             (66),
+       .probe_width             (68),
        .source_width            (3),
        .source_initial_value    ("0"),
        .enable_metastability    ("YES")
@@ -653,7 +792,8 @@ module deca_top #(
        .probe  ({ddr3_rdcal, ddr3_cal_pass, ddr3_ready, phy_link,
                  phy_present, phy_cfg_done, phy_speed, phy_fd,
                  todebug, leds,
-                 blk_rsp.ready, blk_err_q, blk_rsp.count}),
+                 blk_rsp.ready, blk_err_q, blk_rsp.count,
+                 hdmi_cfg_done, hdmi_cfg_nak}),
        .source ({jtag_freeze, jtag_break, jtag_reset})
    );
 `endif

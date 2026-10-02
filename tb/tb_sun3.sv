@@ -16,6 +16,8 @@
 //   +load=<file>@<addr>  at the prompt, load a raw binary into memory (hex byte address)
 //   +berr_log            every bus error to berr.txt
 //   +pc_sample_ms=<t>    the last program fetch every <t> ms, to pcsample.txt
+//   +fb_dump             write the bw2 window to fb.mem at the end (for
+//                        make -C sim screenshot); +fb_dump_ms=<t> also during
 //   +stall_ms=<t>        end the run after this long with no bus cycle (default 100)
 //   +trace_from_ms=<t>   log every bus cycle from then on to trace.txt
 //   +trace_until_ms=<t>  ... and stop logging at <t>
@@ -76,6 +78,7 @@ module tb_sun3 #(
    wire [7:0]  leds;
    wire        en_boot;
    wire [7:0]  todebug;
+   wire        fb_video_en;
 
    wire        wb_cyc, wb_stb, wb_we, wb_ack;
    wire [29:0] wb_adr;
@@ -164,6 +167,7 @@ module tb_sun3 #(
       .en_boot     (en_boot),
       .diag_switch (diag_switch),
       .todebug     (todebug),
+      .fb_video_en (fb_video_en),
       .wb_cyc_o    (wb_cyc),
       .wb_stb_o    (wb_stb),
       .wb_adr_o    (wb_adr),
@@ -309,12 +313,46 @@ module tb_sun3 #(
       end
    end
 
+   // The bw2 window (Wishbone word 0x03F80000 = byte 0x0FE00000, where the
+   // bridges put it), as 32-bit words in DDR3 order, for "make -C sim
+   // screenshot" to render through the real fb_scanout.  +fb_dump writes
+   // fb.mem when the run ends; +fb_dump_ms=<t> also rewrites fb-live<n>.mem
+   // (n = 0..2, rotating) every <t> ms, so a long run can be looked at while
+   // it goes (tools/fbshot picks the newest complete one).
+   localparam int unsigned FB_WB_WORD = 32'h03F80000;
+   localparam int unsigned FB_WORDS   = 32768;           // 128 KiB
+   task automatic fb_dump(input string path);
+      int fd;
+      begin
+         fd = $fopen(path, "w");
+         if (fd == 0) begin
+            $display("note: could not write %s", path);
+            return;
+         end
+         for (int unsigned w = 0; w < FB_WORDS; w++)
+           $fdisplay(fd, "%08x", mem.fetch(FB_WB_WORD + w));
+         $fclose(fd);
+         $display("[%0.3f ms] frame buffer written to %s", $realtime / 1.0e6, path);
+      end
+   endtask
+   real fb_dump_ms = 0.0;
+   int  fb_dump_idx = 0;
+   initial begin
+      if ($value$plusargs("fb_dump_ms=%f", fb_dump_ms) && fb_dump_ms > 0.0)
+        forever begin
+           #(fb_dump_ms * 1.0e6);
+           fb_dump($sformatf("fb-live%0d.mem", fb_dump_idx));
+           fb_dump_idx = (fb_dump_idx + 1) % 3;
+        end
+   end
+
    task automatic wrap_up(input string why);
       $display("");
       $display("==== %s at %0.3f ms ====", why, $realtime / 1.0e6);
       $display("last PROM access at %08x, diag LEDs %02x", last_prom_adr, ~leds);
       console_mon.report();
       mem.report();
+      if ($test$plusargs("fb_dump") || fb_dump_ms > 0.0) fb_dump("fb.mem");
 `ifdef SUN3_WB_CACHE
       $display("[cache] %0d lines: reads %0d hit, %0d miss (%0d lookups not usable), %0d uncached; writes %0d hit, %0d miss, %0d invalidated; %0d fills",
                1 << `SUN3_WB_CACHE_IDX, dut.sun3.wbridge.n_hit, dut.sun3.wbridge.n_miss,

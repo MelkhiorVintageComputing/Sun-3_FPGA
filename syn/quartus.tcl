@@ -24,6 +24,8 @@
 #   -disk_off_mib <n>                where on the card the disk starts, MiB
 #   -wb_fifo   0 | 1                 the FIFO memory bridge, its Wishbone side on CMD_CLK
 #   -wb_cache  0 | 1  -wb_cache_idx <n>   its read cache, 2**n lines of 16 bytes
+#   -video     0 | 1                 the bw2 on the ADV7513 (HDMI), 1280x1024@60
+#   -fb_console 0 | 1                the console on the screen (needs -video 1)
 #   -mem_mib   <n>                   main memory
 #   -romfile   <name>                the PROM, from build/rom/
 #   -eram      0 | 1                 see below; 1 for any real build
@@ -55,6 +57,8 @@ array set opt {
     -wb_fifo   1
     -wb_cache  1
     -wb_cache_idx 9
+    -video     0
+    -fb_console 0
     -mem_mib   16
     -romfile   bootrom_sun3_60_v1.9_noparity_32bits.vh
     -eram      1
@@ -113,9 +117,21 @@ if {$opt(-wb_cache) == 1} {
     }
     lappend defines SUN3_WB_CACHE SUN3_WB_CACHE_IDX=$opt(-wb_cache_idx)
 }
+if {$opt(-video) == 1} {
+    if {$opt(-fb) != 1} {
+        puts "ERROR: -video 1 needs -fb 1: the screen shows the bw2's memory"; exit 1
+    }
+    lappend defines SUN3_VIDEO
+}
+if {$opt(-fb_console) == 1} {
+    if {$opt(-video) != 1} {
+        puts "ERROR: -fb_console 1 needs -video 1: a console nobody can see"; exit 1
+    }
+    lappend defines SUN3_FB_CONSOLE
+}
 
 puts "== Sun-3 for [board_family $opt(-board)] [board_device $opt(-board)], entity $opt(-topent) =="
-puts "== CPU $opt(-cpu) at $opt(-cpu_hz) Hz[expr {$opt(-cpu_div) ? " (VCO/$opt(-cpu_div))" : ""}], duty $opt(-cpu_duty)%, $opt(-mem_mib) MiB, PROM $opt(-romfile), ETH=$opt(-eth), FB=$opt(-fb), WB_FIFO=$opt(-wb_fifo), WB_CACHE=$opt(-wb_cache) (IDX $opt(-wb_cache_idx)) =="
+puts "== CPU $opt(-cpu) at $opt(-cpu_hz) Hz[expr {$opt(-cpu_div) ? " (VCO/$opt(-cpu_div))" : ""}], duty $opt(-cpu_duty)%, $opt(-mem_mib) MiB, PROM $opt(-romfile), ETH=$opt(-eth), FB=$opt(-fb), WB_FIFO=$opt(-wb_fifo), WB_CACHE=$opt(-wb_cache) (IDX $opt(-wb_cache_idx)), VIDEO=$opt(-video), FB_CONSOLE=$opt(-fb_console) =="
 if {$opt(-scsi) == 1} {
     puts "== SCSI disk at $opt(-disk_off_mib) MiB on the micro-SD ([expr {$opt(-disk_off_mib) * 2048}] sectors) =="
 }
@@ -247,6 +263,9 @@ if {$opt(-eth) == 1 || $opt(-topent) eq "deca_top"} {
 
 if {$opt(-topent) eq "deca_top"} {
     foreach f [lsort [glob -nocomplain $top/boards/DECA/*.sv]] { lappend sv $f }
+    if {$opt(-video) == 1} {
+        lappend sv $top/rtl/sun3/fb_scanout.sv $top/rtl/sun3/video_timing.sv
+    }
 
     set bhg $top/Inputs/BrianHG-DDR3/BrianHG_DDR3
     foreach f [list BrianHG_DDR3_CONTROLLER_v16_top.sv BrianHG_DDR3_COMMANDER_v16.sv \
@@ -288,6 +307,9 @@ foreach f $sv {
 
 if {$opt(-topent) eq "deca_top"} {
     set_global_assignment -name SDC_FILE $here/deca.sdc
+    if {$opt(-video) == 1} {
+        set_global_assignment -name SDC_FILE $here/deca_video.sdc
+    }
     source $here/deca_pins.qsf
     source $here/deca_ddr3_pins.qsf
 }

@@ -87,7 +87,13 @@ def main():
         while time.monotonic() < deadline:
             r, _, _ = select.select([fd], [], [], 0.1)
             if r:
-                data = os.read(fd, 4096)
+                # A CP210x can report readable with nothing to read (seen
+                # right after the board was replugged): EAGAIN is "nothing
+                # yet", not an error.
+                try:
+                    data = os.read(fd, 4096)
+                except BlockingIOError:
+                    continue
                 if data:
                     last_rx = time.monotonic()
                     sys.stdout.buffer.write(data.replace(b"\0", b""))
