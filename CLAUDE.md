@@ -87,6 +87,26 @@ each row booted SunOS from the card, answered pings and ran a clean
 
 The design's worst path (+1.276 ns) is outside the CPU clock throughout.
 
+Pushed further (V3, 24 MiB, PROM 1.9, ETH+SCSI+VIDEO, `ALLOW_PW=1`):
+
+| `CPU_DIV` | clock | CPU clock WNS | on the board |
+|---|---|---|---|
+| 25 | 40 MHz | +1.225 ns | not run |
+| 22 | 45.45 MHz | +0.135 ns (8 KiB cache), +0.198 ns (256 KiB) | runs, 256 KiB |
+| 21 | 47.62 MHz | -0.178 ns, 27 endpoints | fails timing |
+| 20 | 50 MHz | -0.812 ns, 228 endpoints | fails timing |
+
+The limit is the RD68021 itself: microcode ROM to the status register, 25
+logic levels, 20.9 ns. At 45.45 MHz with a 256 KiB cache (`CPU_DIV=22
+WB_CACHE_IDX=14`, 104 of 135 BRAM tiles):
+- SunOS boots (rc scripts 40 s);
+- Dhrystone 6.8 s `user` (7,353/s; 9.3 s at 33.33 MHz with 8 KiB);
+- the RAM test (20 MiB, then 2 x 12 MiB with paging) and `patwr` (5:06)
+  find 0 wrong words.
+
+In simulation a 256 KiB cache refuses no lookup either, although five of its
+index bits come from the page map.
+
 Step 6 (done, merged from branch `fifo-bridge`): the FIFO memory bridge
 with its 8 KiB read cache is **the default** (`WB_FIFO=1`, and `WB_CACHE`
 follows `WB_FIFO`), on both boards, in simulation and in the synthesis
