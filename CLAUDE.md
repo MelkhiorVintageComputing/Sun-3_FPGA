@@ -198,8 +198,12 @@ it (`bwtwo0 at obmem 0xff000000 pri 4`, `resolution 1152 x 900`).
   5.3.4), synchronised in `sun3_fpga`.
 - The EEPROM's monitor byte (0x016) is now 0x00, 1152x900 (it was 0x20,
   1280x1024, a LiteX leftover). The console stays on ttya;
-  `FB_CONSOLE=1` (`SUN3_FB_CONSOLE`, needs `VIDEO=1`) moves it to the
-  screen and a keyboard we do not have.
+  `FB_CONSOLE=1` (`SUN3_FB_CONSOLE`, needs `VIDEO=1`) moves the output
+  to the screen; with no keyboard the PROM says "No keyboard found: Using
+  RS232 Port A as input!", so input stays on ttya (seen in simulation,
+  `make -C sim xsim CPU=rd68021 DEFINES=SUN3_FB_CONSOLE XSIMARGS=
+  "-testplusarg fb_dump"`, then `tools/fbshot`: logo, banner and `>`
+  render correctly). What SunOS does with that is untried.
 - DECA: `deca_vidclk` (4th PLL, 108.000 MHz), `video_timing`,
   `deca_hdmi_out` (clock inverted for the ADV7513), `deca_adv7513_init`
   (I2C, DVI mode), the scan-out on BrianHG port 1 behind the
