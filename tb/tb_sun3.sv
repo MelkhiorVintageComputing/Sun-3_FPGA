@@ -346,6 +346,20 @@ module tb_sun3 #(
         end
    end
 
+`ifdef SUN3_FPU
+   // The FPU's bus merge in sun3_top: report the first X on what it hands the
+   // CPU (DSACK, or the FPU's own enables), with the bus cycle at the time.
+   bit fpu_x_seen = 0;
+   always @(posedge CLK)
+     if (!sys_reset && !fpu_x_seen &&
+         ($isunknown(dut.cpu_dsack_n) || $isunknown(dut.fpu_d_oe) || $isunknown(dut.fpu_dsack_oe))) begin
+        fpu_x_seen = 1;
+        $display("[%0.3f ms] X at the FPU merge: cpu_dsack_n=%b fpu_d_oe=%b fpu_dsack_oe=%b fpu_sel=%b FC=%0d A=%08x AS_n=%b",
+                 $realtime / 1.0e6, dut.cpu_dsack_n, dut.fpu_d_oe, dut.fpu_dsack_oe, dut.fpu_sel,
+                 dut.sun3.SUN3_FC, dut.sun3.SUN3_ADR_IN, dut.sun3.SUN3_AS_n);
+     end
+`endif
+
    task automatic wrap_up(input string why);
       $display("");
       $display("==== %s at %0.3f ms ====", why, $realtime / 1.0e6);

@@ -97,6 +97,7 @@ module sun3_top(/* clock, reset */
    wire        DATA_EN;
    wire        BERRn;
    wire        P_RESET_n;
+   wire        fpu_sel;        // sun3_fpga: a coprocessor cycle for the FPU
    wire        P_HALT_n;
    wire [2:0]  FC_OUT;
    wire        AVECn;
@@ -213,6 +214,7 @@ module sun3_top(/* clock, reset */
 		  .diag_switch(diag_switch),
 		  .todebug(todebug),
 		  .fb_video_en(fb_video_en),
+		  .fpu_sel(fpu_sel),
 
 		  // wishbone
 		  .wb_cyc_o(wb_cyc_o),
@@ -304,7 +306,52 @@ module sun3_top(/* clock, reset */
    assign STATUSn = 1'b1;
    assign REFILLn = 1'b1;
 
-   rd68021_top rd68021_cpu(
+   // The FPU (SUN3_FPU): RD68884, an MC68881, on the CPU's side of the bus at
+   // CpID 1, with its same-clock bus front end (BUS_SYNC=1: clk must be the
+   // CPU's CLK, edge for edge).  Its port is 32 bits wide (SIZE high, A0
+   // high).  It answers with its own DSACK and drives only the byte lanes it
+   // owns; both are merged in front of the CPU, so sun3_fpga never sees its
+   // cycles except to select it (fpu_sel) and to keep them out of the bus
+   // timeout.  From RD68884's sim/tme/rd68021_tme_rd68884.sv.
+   wire [31:0] cpu_d_i;
+   wire [1:0]  cpu_dsack_n;
+`ifdef SUN3_FPU
+   wire [31:0] fpu_d_o;
+   wire [3:0]  fpu_d_oe;
+   wire [1:0]  fpu_dsack_n;
+   wire        fpu_dsack_oe;
+
+   rd68884_top #(.BUS_SYNC(1), .BUS_SYNC_WAIT(`SUN3_FPU_WAIT)) fpu (
+			   .clk       (CLK),
+			   .rst_n     (~sys_reset),
+			   .reset_n_i (P_RESET_n),        // RESET- reaches the FPU on a 3/60
+			   .cs_n_i    (~fpu_sel),
+			   .as_n_i    (ASn),
+			   .ds_n_i    (DSn),
+			   .rw_i      (RWn),
+			   .size_n_i  (1'b1),             // 32-bit port: SIZE high ...
+			   .a_i       ({ADR_OUT[4:1], 1'b1}),  // ... and A0 strapped high
+			   .d_i       (DATA_OUT),
+			   .d_o       (fpu_d_o),
+			   .d_oe      (fpu_d_oe),
+			   .dsack_n_o (fpu_dsack_n),
+			   .dsack_oe  (fpu_dsack_oe));
+
+   genvar 	       fl;
+   generate for (fl = 0; fl < 4; fl = fl + 1) begin : fpu_lane
+      assign cpu_d_i[8*fl +: 8] = fpu_d_oe[fl] ? fpu_d_o[8*fl +: 8] : DATA_IN[8*fl +: 8];
+   end endgenerate
+   assign cpu_dsack_n = DSACKn & (fpu_dsack_oe ? fpu_dsack_n : 2'b11);
+`else
+   assign cpu_d_i     = DATA_IN;
+   assign cpu_dsack_n = DSACKn;
+`endif
+
+   rd68021_top
+`ifdef SUN3_FPU
+     #(.COPROCESSOR(1'b1))
+`endif
+     rd68021_cpu(
 			   .clk(CLK),      // free-running, both edges used
 			   .rst_n(RESET_INn | HALT_INn),    // not an MC68020 pin: async init, see doc/pinout.md
 
@@ -317,7 +364,7 @@ module sun3_top(/* clock, reset */
 			   .a_oe(a_oe),
 
 			   // Data bus (UM 3.4) ------------------------------------------------------
-			   .d_i(DATA_IN),
+			   .d_i(cpu_d_i),       // DATA_IN, or the FPU's lanes when it drives them
 			   .d_o(DATA_OUT),      // all 32 bits driven on every write (UM 5.2.4)
 			   .d_oe(DATA_EN),
 
@@ -338,7 +385,7 @@ module sun3_top(/* clock, reset */
 			   .ds_oe(ds_oe),
 			   .dben_o(DBENn),
 			   .dben_oe(dben_oe),
-			   .dsack_n_i(DSACKn),  // [1] is DSACK1; sample both on the same edge
+			   .dsack_n_i(cpu_dsack_n),  // [1] is DSACK1; sample both on the same edge
 
 			   // Interrupt control (UM 3.7) ---------------------------------------------
 			   .ipl_n_i(IPLn),

@@ -42,6 +42,23 @@ compile_cpu() {
 			"$rd/rtl/rd68021_ifu.sv" \
 			"$rd/rtl/rd68021_seq.sv" \
 			"$rd/rtl/rd68021_top.sv"
+		if [ "${SUN3_FPU:-0}" = 1 ]; then
+			"$top/tools/patch_inputs.sh" RD68884
+			local fp="$top/build/inputs/RD68884"
+			echo "== compiling the RD68884 MC68881 (SystemVerilog) =="
+			# Order from that project's Makefile: packages, generated
+			# package and ROMs, then the RTL.
+			xvlog --sv --work sun3 \
+				"$fp/rtl/rd68884_pkg.sv" \
+				"$fp/rtl/gen/rd68884_ucode_pkg.sv" \
+				"$fp/rtl/gen/rd68884_crom.sv" \
+				"$fp/rtl/gen/rd68884_ucode_rom.sv" \
+				"$fp/rtl/rd68884_sync.sv" \
+				"$fp/rtl/rd68884_biu.sv" \
+				"$fp/rtl/rd68884_regfile.sv" \
+				"$fp/rtl/rd68884_seq.sv" \
+				"$fp/rtl/rd68884_top.sv"
+		fi
 		;;
 	suska)
 		"$top/tools/patch_inputs.sh" Suska_Configware

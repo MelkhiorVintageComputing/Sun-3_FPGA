@@ -11,6 +11,12 @@
 //   SUN3_SCSI            the on-board SCSI (sun3_si.sv: Wish5380's 5380 and disk
 //                        target, an Am9516 subset), at OBIO 0x140000, with the
 //                        disk's block seam brought out to the board
+//   SUN3_FPU             an MC68881 (Inputs/RD68884) at CpID 1 next to the
+//                        RD68021 (COPROCESSOR=1), enabled by EN.FPP; needs
+//                        SUN3_CPU_RD68021.  Without it every coprocessor
+//                        cycle ends in BERR, i.e. an F-line trap
+//   SUN3_FPU_WAIT        the FPU's same-clock bus front end: 0 or 1 wait
+//                        state (RD68884 BUS_SYNC_WAIT; default 0)
 //   SUN3_HAS_DVMA        derived, not set: a DVMA master exists (either of the two)
 //   SUN3_WB_FIFO         the memory bridge through two dual-clock FIFOs
 //                        (sun3_fifo_bridge.v): writes acknowledged when queued,
@@ -56,6 +62,10 @@
 // (Verilog has no portable `error).
 `ifndef SUN3_WB_CACHE_IDX
  `define SUN3_WB_CACHE_IDX 9
+`endif
+
+`ifndef SUN3_FPU_WAIT
+ `define SUN3_FPU_WAIT 0
 `endif
 
 `ifndef SUN3_MEM_MIB

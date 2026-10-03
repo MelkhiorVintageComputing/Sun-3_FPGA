@@ -261,6 +261,41 @@ writing such a test with SunOS's `cc -O`: a pattern like `i * 69069`
 overflows a 32-bit long, and the optimiser's strength-reduced loop then
 stops early, which reads back as zeros and looks like a memory fault.
 
+Step 8 (branch `fpu`): the MC68881. `FPU=1` (`SUN3_FPU`, RD68021 only)
+puts `Inputs/RD68884` (MC68881-compatible, submodule at 557e806) next to
+the RD68021, which is pinned at 1b57478 and built with `COPROCESSOR=1`:
+- The FPU is in `sun3_top`, on the CPU's side of the MMU. It uses its
+  same-clock bus front end (`BUS_SYNC=1`, `clk` = the CPU's CLK; `FPU_WAIT`
+  sets `BUS_SYNC_WAIT`, default 0) as a 32-bit port (SIZE and A0 strapped
+  high).
+- Its DSACK and data lanes are merged in front of the CPU (`cpu_dsack_n`,
+  `cpu_d_i`), as in RD68884's `sim/tme/rd68021_tme_rd68884.sv`.
+- Chip select (`fpu_sel`, sun3_fpga): FC 7, A19-A16 = 2, CpID (A15-A13) 1,
+  and EN.FPP (System Enable bit 6).
+- Every other coprocessor-space cycle (another CpID, EN.FPP clear, or no
+  FPU built) ends in a prompt BERR at C_S4. That BERR skips `BERRCLK`, so
+  the Bus Error register and the fault log are untouched (Architecture
+  Manual 3.2), and the bus timeout excludes coprocessor cycles. The CPU
+  turns it into an F-line trap, the "no coprocessor" answer an OS looks
+  for. (Before, such a cycle timed out and latched 0x20.)
+- `tools/beprobe/fpuprobe.S` checks, in simulation:
+  - with EN.FPP clear: one F-line trap, Bus Error register unchanged;
+  - with it set, bit-exact: 3*4, 1.5+2.25, 1/3, sqrt(2), sin(pi/2) (pi
+    from the constant ROM), an FMOVEM and an FSAVE/FRESTORE round trip.
+
+  `fpuprobe PASS`. It prints about 300 characters at 9600 baud (1 ms each):
+  give it `TIMEOUT_MS=1400`. Print nothing with a `>` in it: the testbench
+  takes that for the monitor's prompt.
+- V3 build at 40 MHz (`BOARD=v3 CPU=rd68021 CPU_DIV=25 ETH=1 FPU=1 VIDEO=1
+  MEM_MIB=24 ALLOW_PW=1`, no SCSI): WNS +0.569 ns. The FPU is 3,898 LUTs,
+  900 FF, 19 RAMB36 + 2 RAMB18 and 6 DSPs; the design is 20,458 LUTs and
+  56.5 of 135 BRAM tiles.
+- On the board, NetBSD 10.1 net-boots (`b le()`: netboot over TFTP, the
+  RAMDISK kernel over NFS) and reports `fpu: mc68881`, `total memory =
+  24576 KB`. It runs through to the RAMDISK installer's shell; the old
+  `pid 52 killed: no floating point support` stop is gone. That shell is
+  one crunched binary with no floating-point tool to try.
+
 ## Commands
 
 | command | what |
