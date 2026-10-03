@@ -31,3 +31,6 @@
 [submodule "Inputs/doc/DECA_board"]
 	path = Inputs/doc/DECA_board
 	url = https://github.com/DECAfpga/DECA_board
+[submodule "Inputs/RD68884"]
+	path = Inputs/RD68884
+	url = git@github.com:MelkhiorVintageComputing/RD68884.git

@@ -74,6 +74,16 @@ if [ "$wbcache" = 1 ]; then
 	tag="$tag-wbcache"
 	[ "$wbcacheidx" != 9 ] && tag="$tag$wbcacheidx"
 fi
+fpu=${SUN3_FPU:-0}
+fpuwait=${SUN3_FPU_WAIT:-0}
+if [ "$fpu" = 1 ]; then
+	if [ "$cpu" != rd68021 ]; then
+		echo "FPU=1 needs CPU=rd68021 (its coprocessor interface)" >&2
+		exit 1
+	fi
+	tag="$tag-fpu"
+	[ "$fpuwait" != 0 ] && tag="${tag}w$fpuwait"
+fi
 [ "$lat" != 0 ] && tag="$tag-lat$lat"
 [ "$fill" != 00000000 ] && tag="$tag-fill$fill"
 [ "$hz" != 20000000 ] && tag="$tag-cpu$((hz / 1000000))"
@@ -98,6 +108,7 @@ esac
 [ "$scsi" = 1 ] && defargs+=(-d SUN3_SCSI)
 [ "$wbfifo" = 1 ] && defargs+=(-d SUN3_WB_FIFO)
 [ "$wbcache" = 1 ] && defargs+=(-d SUN3_WB_CACHE -d "SUN3_WB_CACHE_IDX=$wbcacheidx")
+[ "$fpu" = 1 ] && defargs+=(-d SUN3_FPU -d "SUN3_FPU_WAIT=$fpuwait")
 for d in $SUN3_DEFINES; do
 	defargs+=(-d "$d")
 done

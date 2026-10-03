@@ -64,6 +64,16 @@ if [ "$wbcache" = 1 ]; then
 	tag="$tag-wbcache"
 	[ "$wbcacheidx" != 9 ] && tag="$tag$wbcacheidx"
 fi
+fpu=${SUN3_FPU:-0}
+fpuwait=${SUN3_FPU_WAIT:-0}
+if [ "$fpu" = 1 ]; then
+	if [ "$cpu" != rd68021 ]; then
+		echo "FPU=1 needs CPU=rd68021 (its coprocessor interface)" >&2
+		exit 1
+	fi
+	tag="$tag-fpu"
+	[ "$fpuwait" != 0 ] && tag="${tag}w$fpuwait"
+fi
 for d in $SUN3_DEFINES; do tag="$tag-${d//=/_}"; done
 rundir="$top/build/sim/board-$tag"
 mkdir -p "$rundir"
@@ -77,6 +87,7 @@ fi
 defargs=(-d SUN3_SIM -d "SUN3_CPU_HZ=$hz" -d "SUN3_MEM_MIB=$mem" -d "SUN3_BOOTROM_FILE=\"$romfile\"")
 [ "$wbfifo" = 1 ] && defargs+=(-d SUN3_WB_FIFO)
 [ "$wbcache" = 1 ] && defargs+=(-d SUN3_WB_CACHE -d "SUN3_WB_CACHE_IDX=$wbcacheidx")
+[ "$fpu" = 1 ] && defargs+=(-d SUN3_FPU -d "SUN3_FPU_WAIT=$fpuwait")
 for d in $SUN3_DEFINES; do defargs+=(-d "$d"); done
 
 if [ "$BOARD" = deca ] && { [ "$BOARD_MEM" != fast ] || [ "$BOARD_CLKGEN" != behavioural ]; }; then

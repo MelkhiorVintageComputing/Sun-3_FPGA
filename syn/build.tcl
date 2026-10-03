@@ -2,7 +2,7 @@
 #
 #   vivado -mode batch -source syn/build.tcl \
 #       -tclargs CPU_HZ CPU_DIV BOARD CPU ETH MEM_MIB ROMFILE ALLOW_PW OUTDIR FB \
-#                SCSI DISK_OFF_MIB WB_FIFO WB_CACHE WB_CACHE_IDX VIDEO FB_CONSOLE
+#                SCSI DISK_OFF_MIB WB_FIFO WB_CACHE WB_CACHE_IDX VIDEO FB_CONSOLE FPU FPU_WAIT
 #
 # Run through syn/Makefile, which owns the defaults and the output directory's
 # name (passed in, not recomputed here, so the two cannot disagree).
@@ -18,11 +18,11 @@ set top  [file normalize $here/..]
 
 source $here/boards.tcl
 
-if {[llength $argv] != 17} {
-    puts "ERROR: build.tcl wants 17 arguments (see its header), got [llength $argv]: $argv"
+if {[llength $argv] != 19} {
+    puts "ERROR: build.tcl wants 19 arguments (see its header), got [llength $argv]: $argv"
     exit 1
 }
-lassign $argv cpu_hz cpu_div board cpu eth mem_mib romfile allowpw outdir fb scsi disk_off_mib wb_fifo wb_cache wb_cache_idx video fb_console
+lassign $argv cpu_hz cpu_div board cpu eth mem_mib romfile allowpw outdir fb scsi disk_off_mib wb_fifo wb_cache wb_cache_idx video fb_console fpu fpu_wait
 
 # CPU_DIV names the MMCM divider directly and wins over CPU_HZ in
 # wukong_clkgen.sv, so from here on cpu_hz is the clock that will exist -- it
@@ -87,6 +87,14 @@ if {$video == 1} {
     }
     lappend defines SUN3_VIDEO
 }
+# The MC68881 (RD68884) next to the RD68021, at CpID 1.
+if {$fpu == 1} {
+    if {$cpu ne "rd68021"} {
+        puts "ERROR: FPU=1 needs CPU=rd68021 (its coprocessor interface)"
+        exit 1
+    }
+    lappend defines SUN3_FPU SUN3_FPU_WAIT=$fpu_wait
+}
 if {$fb_console == 1} {
     if {$video != 1} {
         puts "ERROR: FB_CONSOLE=1 needs VIDEO=1: a console nobody can see"
@@ -106,7 +114,7 @@ if {$wb_cache == 1} {
     lappend defines SUN3_WB_CACHE SUN3_WB_CACHE_IDX=$wb_cache_idx
 }
 
-puts "== Sun-3 for Wukong $board ($part), CPU $cpu at $cpu_hz Hz, $mem_mib MiB, PROM $romfile, ETH=$eth, FB=$fb, WB_FIFO=$wb_fifo, WB_CACHE=$wb_cache (IDX $wb_cache_idx), VIDEO=$video, FB_CONSOLE=$fb_console =="
+puts "== Sun-3 for Wukong $board ($part), CPU $cpu at $cpu_hz Hz, $mem_mib MiB, PROM $romfile, ETH=$eth, FB=$fb, WB_FIFO=$wb_fifo, WB_CACHE=$wb_cache (IDX $wb_cache_idx), VIDEO=$video, FB_CONSOLE=$fb_console, FPU=$fpu (wait $fpu_wait) =="
 if {$scsi == 1} {
     puts "== SCSI disk at $disk_off_mib MiB on the micro-SD ([expr {$disk_off_mib * 2048}] sectors) =="
 }
@@ -140,6 +148,19 @@ if {$cpu eq "rd68021"} {
         $rd/rd68021_ifu.sv \
         $rd/rd68021_seq.sv \
         $rd/rd68021_top.sv ]
+    if {$fpu == 1} {
+        set fp $inputs/RD68884/rtl
+        read_verilog -sv [list \
+            $fp/rd68884_pkg.sv \
+            $fp/gen/rd68884_ucode_pkg.sv \
+            $fp/gen/rd68884_crom.sv \
+            $fp/gen/rd68884_ucode_rom.sv \
+            $fp/rd68884_sync.sv \
+            $fp/rd68884_biu.sv \
+            $fp/rd68884_regfile.sv \
+            $fp/rd68884_seq.sv \
+            $fp/rd68884_top.sv ]
+    }
 } else {
     # VHDL-2008: the core connects `buffer' formals to `out' actuals.  Of the
     # two ALU files (one entity), alu_new, as the old build used.

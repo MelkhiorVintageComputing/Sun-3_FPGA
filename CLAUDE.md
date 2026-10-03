@@ -261,6 +261,73 @@ writing such a test with SunOS's `cc -O`: a pattern like `i * 69069`
 overflows a 32-bit long, and the optimiser's strength-reduced loop then
 stops early, which reads back as zeros and looks like a memory fault.
 
+Step 8 (branch `fpu`): the MC68881. `FPU=1` (`SUN3_FPU`, RD68021 only)
+puts `Inputs/RD68884` (MC68881-compatible, submodule at 557e806) next to
+the RD68021, which is pinned at 1b57478 and built with `COPROCESSOR=1`:
+- The FPU is in `sun3_top`, on the CPU's side of the MMU. It uses its
+  same-clock bus front end (`BUS_SYNC=1`, `clk` = the CPU's CLK; `FPU_WAIT`
+  sets `BUS_SYNC_WAIT`, default 0) as a 32-bit port (SIZE and A0 strapped
+  high).
+- Its DSACK and data lanes are merged in front of the CPU (`cpu_dsack_n`,
+  `cpu_d_i`), as in RD68884's `sim/tme/rd68021_tme_rd68884.sv`.
+- Chip select (`fpu_sel`, sun3_fpga): FC 7, A19-A16 = 2, CpID (A15-A13) 1,
+  and EN.FPP (System Enable bit 6).
+- Every other coprocessor-space cycle (another CpID, EN.FPP clear, or no
+  FPU built) ends in a prompt BERR at C_S4. That BERR skips `BERRCLK`, so
+  the Bus Error register and the fault log are untouched (Architecture
+  Manual 3.2), and the bus timeout excludes coprocessor cycles. The CPU
+  turns it into an F-line trap, the "no coprocessor" answer an OS looks
+  for. (Before, such a cycle timed out and latched 0x20.)
+- `tools/beprobe/fpuprobe.S` checks, in simulation:
+  - with EN.FPP clear: one F-line trap, Bus Error register unchanged;
+  - with it set, bit-exact: 3*4, 1.5+2.25, 1/3, sqrt(2), sin(pi/2) (pi
+    from the constant ROM), an FMOVEM and an FSAVE/FRESTORE round trip.
+
+  `fpuprobe PASS`. It prints about 300 characters at 9600 baud (1 ms each):
+  give it `TIMEOUT_MS=1400`. Print nothing with a `>` in it: the testbench
+  takes that for the monitor's prompt.
+- V3 build at 40 MHz (`BOARD=v3 CPU=rd68021 CPU_DIV=25 ETH=1 FPU=1 VIDEO=1
+  MEM_MIB=24 ALLOW_PW=1`, no SCSI): WNS +0.569 ns. The FPU is 3,898 LUTs,
+  900 FF, 19 RAMB36 + 2 RAMB18 and 6 DSPs; the design is 20,458 LUTs and
+  56.5 of 135 BRAM tiles.
+- On the board, NetBSD 10.1 net-boots (`b le()`: netboot over TFTP, the
+  RAMDISK kernel over NFS) and reports `fpu: mc68881`, `total memory =
+  24576 KB`. It runs through to the RAMDISK installer's shell; the old
+  `pid 52 killed: no floating point support` stop is gone. That shell is
+  one crunched binary with no floating-point tool to try.
+- Everything together (24 MiB, ETH, SCSI, VIDEO, FPU) on the V3:
+
+  | `CPU_DIV` | cache | `FPU_WAIT` | BRAM tiles | CPU clock WNS |
+  |---|---|---|---|---|
+  | 22 (45.45 MHz) | 256 KiB | 0 | 124 | -0.396 ns, fails |
+  | 23 (43.48 MHz) | 256 KiB | 0 | 124 | +0.119 ns |
+  | 22 (45.45 MHz) | 128 KiB | 1 | 89.5 | +0.186 ns |
+
+  The 45.45 MHz / 256 KiB build fails on 130 paths: 95 from the RD68021's
+  bus unit to its fetch unit, 19 inside its sequencer, and 16 from its bus
+  unit into the FPU (the zero-wait handover). Two Vivado builds run at once
+  in the same work directory killed one of them: run builds one at a time.
+- On the board, the 43.48 MHz / 256 KiB build boots SunOS 4.1.1 from the
+  card. The same C program built with each compiler and float option:
+
+  | compiler | `user` | results |
+  |---|---|---|
+  | Sun `cc -O -f68881` | 70.6 s | `exp(1)` = 2.7182818284590451, `pow(2,0.5)` = 1.4142135623730951 |
+  | Sun `cc -O -fsoft` | 243.2 s | ...455 and ...949: the software library's own rounding |
+  | gcc 2.3.3 `-O -m68881` | 32.3 s | the same digits as `cc -f68881` |
+  | gcc 2.3.3 `-O` (soft) | 246.4 s | the same digits as `cc -fsoft` |
+
+  The program evaluates `sqrt`, `sin` and `exp` and sums 200,000 terms of
+  `sqrt(x)*sin(x)/x`. Whetstone (double precision, Painter's C version,
+  gcc 2.3.3 -O): 1.3 MIPS with `-m68881` (1,000 loops in 78 s), 192.3 KIPS
+  soft-float, 6.7x.
+- The 45.45 MHz / 128 KiB / `FPU_WAIT=1` build on the board: SunOS boots
+  (rc scripts 40 s), the FP program gives the same digits (gcc `-m68881`
+  31.6 s, `cc -f68881` 68.4 s), Whetstone 1.3 MIPS (1,000 loops in 75.6 s,
+  against 78.1 s at 43.48 MHz), Dhrystone 6.8 s `user`. The RAM test and
+  `patwr` (5:15) find no wrong word. The 4.5% faster clock gains about 3%
+  on FP work, the FPU's wait state taking part of it back.
+
 ## Commands
 
 | command | what |

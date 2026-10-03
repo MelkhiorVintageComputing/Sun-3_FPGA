@@ -25,8 +25,9 @@ On real hardware, with the RD68021 CPU core (`CPU=rd68021`):
 * **The bw2 frame buffer on HDMI**: the 1152x900 screen, centred in a
   1280x1024@60 signal. The console can be on serial (default) or on the
   screen, with input still taken from serial (there is no keyboard).
-* **NetBSD/sun3** net-boots its RAMDISK kernel and reaches userland (it then
-  stops for lack of an FPU).
+* **NetBSD/sun3** net-boots its RAMDISK kernel. With the optional MC68881
+  (`FPU=1`) it reports `fpu: mc68881` and reaches the installer's shell;
+  without it userland stops for lack of an FPU.
 * **Up to 24 MiB of memory**, the 3/60's maximum.
 * A memory path with posted writes and an 8 KiB read cache: Dhrystone 1.1
   runs at 5,376/s on the Wukong at 33.33 MHz and 2,660/s on the DECA at
@@ -101,6 +102,7 @@ works on the bench monitor regardless.
 | `VIDEO` | 0 | the bw2 on HDMI |
 | `FB_CONSOLE` | 0 | the console on the screen (needs `VIDEO=1`) |
 | `MEM_MIB` | 16 | main memory, up to 24 |
+| `FPU` | 0 | the MC68881 (RD68884), with `CPU=rd68021` |
 | `ROM_VER` | 1.9 | boot PROM revision (see below) |
 | `WB_FIFO`, `WB_CACHE` | 1, 1 | the FIFO memory bridge and its read cache |
 
@@ -131,8 +133,9 @@ white but nothing is drawn. Rev 1.9 works in both cases.
 
 ## Known limitations
 
-* **No FPU.** A 3/60 has an MC68881; NetBSD's userland needs it and stops.
-  SunOS runs without one.
+* **The FPU is optional** (`FPU=1`, RD68021 only): RD68884, an MC68881, at
+  CpID 1. Without it NetBSD's userland stops; with it NetBSD finds
+  `fpu: mc68881` and boots on. Not yet on the DECA (block RAM).
 * **No keyboard or mouse.** The console input is the serial line (or the
   network).
 * **Suska core** (`CPU=suska`): the PROM boots to its monitor, but NetBSD

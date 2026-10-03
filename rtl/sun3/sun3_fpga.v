@@ -93,6 +93,7 @@ module sun3_fpga(/* clock, reset */
 		 //output [2:0]  berrd,
 		 output [7:0] 	todebug,
 		 output 	fb_video_en, // EN.VIDEO, to the board's scan-out
+		 output 	fpu_sel,     // a coprocessor cycle for the FPU (CpID 1, EN.FPP), to sun3_top
 		 /* wishbone */
 		 output 	wb_cyc_o,
 		 output 	wb_stb_o,
@@ -187,6 +188,17 @@ module sun3_fpga(/* clock, reset */
    assign FC_SDATA     = (SUN3_FC == 3'h5);
    assign FC_SPROG     = (SUN3_FC == 3'h6);
    assign FC_CPUCYCLE  = (SUN3_FC == 3'h7);
+
+   // Coprocessor space: CPU space (FC 7), A19-A16 = 2, CpID on A15-A13, the
+   // register on A4-A0 (MC68020 UM 7).  The 3/60's FPP is CpID 1, and only
+   // while EN.FPP is set (Architecture Manual 4.8).  Every other coprocessor
+   // cycle -- another CpID, EN.FPP clear, or no FPU built -- ends promptly
+   // with BERR, which on the first CIR access the CPU turns into an F-line
+   // trap: that is how an OS finds there is no FPU.  Per Manual 3.2 those
+   // errors do not touch the Bus Error register (no BERRCLK) and are not
+   // timeouts.  DVMA never runs CPU-space cycles, so SUN3_* is the CPU's.
+   wire MATCH_COPRO = FC_CPUCYCLE & (SUN3_ADR_IN[19:16] == 4'h2);
+   wire COPRO_BERR  = MATCH_COPRO & ~fpu_sel;   // fpu_sel: below, after EN.FPP
    assign FC_GENERAL   = ~FC_CTRLLAYER & ~FC_CPUCYCLE;
 
    wire EN_BOOT; // positive logic view of EN_BOOTn
@@ -287,7 +299,7 @@ module sun3_fpga(/* clock, reset */
 	if (~SUN3_AS_n & C_S12r) C_S14r <= 1'b1;
 	if (~SUN3_AS_n & C_S14r) C_S16r <= 1'b1;
 	if (~SUN3_AS_n & C_S16r) C_S18r <= 1'b1;
-	if (~SUN3_AS_n & C_S18r & !MATCH_MEM & !MATCH_FB // CHECKME: sun3, too soon?
+	if (~SUN3_AS_n & C_S18r & !MATCH_MEM & !MATCH_FB & !MATCH_COPRO // CHECKME: sun3, too soon?
 `ifdef SUN3_ETH_WISH7990
 	    & !MATCH_AMDLE
 `endif
@@ -457,7 +469,8 @@ module sun3_fpga(/* clock, reset */
 		    .CLR_n(~sys_reset /*1'b1 */) /* FIXME: how is supposed to be initialized ??? */
 		    );
    assign BERRCLK	= (C_S6 & (BERR_P | BERR_T | BERR_V)); // FIXME: timing?
-   assign BERR	        = (C_S6 & (BERR_P | BERR_T | BERR_V)); // FIXME: timing?
+   assign BERR	        = (C_S6 & (BERR_P | BERR_T | BERR_V)) // FIXME: timing?
+			  | (C_S4 & COPRO_BERR);   // not latched: no BERRCLK
    assign P_BERR_n = ~BERR;
 
    // System Enable register
@@ -476,6 +489,11 @@ module sun3_fpga(/* clock, reset */
    assign EN_COPY  = sys_out[2];
    assign EN_VIDEO = sys_out[3];
    assign fb_video_en = EN_VIDEO;
+`ifdef SUN3_FPU
+   assign fpu_sel   = MATCH_COPRO & (SUN3_ADR_IN[15:13] == 3'd1) & EN_FPP;
+`else
+   assign fpu_sel   = 1'b0;
+`endif
    assign EN_CACHE = sys_out[4];
    assign EN_SDVMA = sys_out[5];
    assign EN_FPP   = sys_out[6];
