@@ -321,6 +321,12 @@ the RD68021, which is pinned at 1b57478 and built with `COPROCESSOR=1`:
   `sqrt(x)*sin(x)/x`. Whetstone (double precision, Painter's C version,
   gcc 2.3.3 -O): 1.3 MIPS with `-m68881` (1,000 loops in 78 s), 192.3 KIPS
   soft-float, 6.7x.
+- The 45.45 MHz / 128 KiB / `FPU_WAIT=1` build on the board: SunOS boots
+  (rc scripts 40 s), the FP program gives the same digits (gcc `-m68881`
+  31.6 s, `cc -f68881` 68.4 s), Whetstone 1.3 MIPS (1,000 loops in 75.6 s,
+  against 78.1 s at 43.48 MHz), Dhrystone 6.8 s `user`. The RAM test and
+  `patwr` (5:15) find no wrong word. The 4.5% faster clock gains about 3%
+  on FP work, the FPU's wait state taking part of it back.
 
 ## Commands
 
