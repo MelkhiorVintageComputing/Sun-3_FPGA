@@ -295,6 +295,32 @@ the RD68021, which is pinned at 1b57478 and built with `COPROCESSOR=1`:
   24576 KB`. It runs through to the RAMDISK installer's shell; the old
   `pid 52 killed: no floating point support` stop is gone. That shell is
   one crunched binary with no floating-point tool to try.
+- Everything together (24 MiB, ETH, SCSI, VIDEO, FPU) on the V3:
+
+  | `CPU_DIV` | cache | `FPU_WAIT` | BRAM tiles | CPU clock WNS |
+  |---|---|---|---|---|
+  | 22 (45.45 MHz) | 256 KiB | 0 | 124 | -0.396 ns, fails |
+  | 23 (43.48 MHz) | 256 KiB | 0 | 124 | +0.119 ns |
+  | 22 (45.45 MHz) | 128 KiB | 1 | 89.5 | +0.186 ns |
+
+  The 45.45 MHz / 256 KiB build fails on 130 paths: 95 from the RD68021's
+  bus unit to its fetch unit, 19 inside its sequencer, and 16 from its bus
+  unit into the FPU (the zero-wait handover). Two Vivado builds run at once
+  in the same work directory killed one of them: run builds one at a time.
+- On the board, the 43.48 MHz / 256 KiB build boots SunOS 4.1.1 from the
+  card. The same C program built with each compiler and float option:
+
+  | compiler | `user` | results |
+  |---|---|---|
+  | Sun `cc -O -f68881` | 70.6 s | `exp(1)` = 2.7182818284590451, `pow(2,0.5)` = 1.4142135623730951 |
+  | Sun `cc -O -fsoft` | 243.2 s | ...455 and ...949: the software library's own rounding |
+  | gcc 2.3.3 `-O -m68881` | 32.3 s | the same digits as `cc -f68881` |
+  | gcc 2.3.3 `-O` (soft) | 246.4 s | the same digits as `cc -fsoft` |
+
+  The program evaluates `sqrt`, `sin` and `exp` and sums 200,000 terms of
+  `sqrt(x)*sin(x)/x`. Whetstone (double precision, Painter's C version,
+  gcc 2.3.3 -O): 1.3 MIPS with `-m68881` (1,000 loops in 78 s), 192.3 KIPS
+  soft-float, 6.7x.
 
 ## Commands
 
