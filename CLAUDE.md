@@ -343,6 +343,19 @@ the RD68021, which is pinned at 1b57478 and built with `COPROCESSOR=1`:
   | `CPU_DIV=23`, 128 KiB, FPU, `FPU_WAIT=1` | | +0.082 ns |
 
   The failing paths start at the bus unit's falling-edge `early_q`.
+  On the board, the 43.48 MHz build boots SunOS 4.1.1 from the card (fsck
+  clean, `bwtwo0`, pings) and beats the old cores' 45.45 MHz build:
+
+  | V3, 128 KiB, FPU, `FPU_WAIT=1` | old cores, 45.45 MHz | new cores, 43.48 MHz |
+  |---|---|---|
+  | Dhrystone 1.1 (`user`, 50000) | 6.8 s | 6.6 s |
+  | FP program, gcc 2.3.3 `-m68881` | 31.6 s | 27.5 s |
+  | FP program, `cc -f68881` | 68.4 s | 62.2 s |
+  | Whetstone (`-m68881`, 1,000 loops) | 75.6 s, 1.3 MIPS | 65.1 s, 1.5 MIPS |
+  | `patwr` (32 MiB, 0 wrong) | 5:15 | 4:49 |
+
+  The FP program prints the same digits; the RAM test (20 MiB, then two
+  12 MiB processes at once) finds no wrong word.
 
 ## Commands
 
