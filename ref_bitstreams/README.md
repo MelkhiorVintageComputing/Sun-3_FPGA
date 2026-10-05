@@ -5,7 +5,55 @@ and so later changes can be compared against something that was tested.
 Each `.zip` holds the `.bit` (JTAG), the `.bin` (SPI flash) and their
 `SHA256SUMS`.
 
-## Current: `sun3_60_wukong_v3_45MHz_24MiB_cache128k_fpu.zip`
+## Current: `sun3_60_wukong_v3_43MHz_24MiB_cache128k_fpu.zip`
+
+A Sun-3/60 with its **MC68881** on the **QMTech Wukong V3**
+(xc7a100tfgg676-**1**), with the updated CPU and FPU cores.
+
+| | |
+|---|---|
+| Source | commit `a812c48` (branch `cores-update`, merged into master); built from it with no local changes to `rtl/`, `boards/`, `syn/`, the PROM tools or the submodules |
+| Submodules | RD68021 `eb346e4`, RD68884 `2dfb1a9`, Wish7990 `8610ef5`, Wish5380 `bde4ef3`, z8530_scc `b9bcd67`, hdmi `83b1c95` (+ `patches/hdmi/0001`) |
+| Tools | Vivado 2025.2 |
+| Build | `make -C syn bitstream BOARD=v3 CPU=rd68021 CPU_DIV=23 ETH=1 SCSI=1 VIDEO=1 FPU=1 FPU_WAIT=1 MEM_MIB=24 WB_CACHE_IDX=13 ALLOW_PW=1` |
+| CPU | RD68021 at 43.48 MHz (1000 MHz / 23), with posted writes |
+| FPU | RD68884 (MC68881-compatible) at CpID 1, same-clock bus with one wait state, enabled by EN.FPP |
+| Memory | 24 MiB (the 3/60's maximum), FIFO bridge with a 128 KiB read cache |
+| PROM | Rev 1.9 + `noparity` (`tools/sun3_60_v1.9_noparity.txt`) |
+| Devices | Ethernet (RTL8211EG, 10 Mb/s), on-board SCSI with its disk on the micro-SD card at offset 0, bw2 frame buffer on HDMI (1280x1024@60, 1152x900 centred) |
+| Console | ttya: the board's USB serial port, 9600 8N1 (`FB_CONSOLE=0`) |
+| Timing | WNS +0.082 ns, WHS +0.035 ns. One known exception, accepted by `ALLOW_PW=1`: the 540.625 MHz HDMI serialiser clock is 0.305 ns over the -1 part's BUFG minimum period |
+| Resources | 22,150 LUTs (35%), 11,450 registers (9%), 89.5 of 135 block RAM tiles, 11 DSPs |
+
+SHA-256:
+
+```
+a66162b83cb2d466d45fa1141ecdd3cd38872143e3f9690161d9d190d1023daa  sun3_60_wukong_v3_43MHz_24MiB_cache128k_fpu.bit
+274d4d6cf44a06016233dcf5bc3be9fcf3f27bb2b7467f52e6e758588a85b138  sun3_60_wukong_v3_43MHz_24MiB_cache128k_fpu.bin
+```
+
+**Tested on the board:**
+- SunOS 4.1.1 GENERIC boots multi-user from the micro-SD card; fsck is
+  clean, `bwtwo0` attaches at 1152x900, the network answers.
+- Floating point: the test program gives the same correctly rounded digits
+  as before, with gcc 2.3.3 `-m68881` (27.5 s) and Sun `cc -f68881`
+  (62.2 s). Whetstone (double precision, gcc 2.3.3 -O -m68881): 1.5 MIPS.
+- Dhrystone 1.1: 6.6 s `user` for 50,000 passes (7,576/s).
+- A RAM test (two 12 MiB processes at once, then 20 MiB) and `patwr` (a
+  32 MiB file written and checked, 4:49) find no wrong word.
+- In simulation: the PROM boot, beprobe, rteprobe, nmiprobe, fpuprobe and
+  `k2` after sccie all pass.
+
+Slower clock, faster machine: with the new cores this build beats the
+previous reference at 45.45 MHz on every test (FP work by 9-14%). The new
+RD68021 no longer meets timing at 45.45 MHz in this design (-0.539 ns,
+inside the core: its bus unit to its fetch unit).
+
+Load it as the one below (`unzip`, then `syn/program.tcl` with the `.bit`).
+
+## Previous: `sun3_60_wukong_v3_45MHz_24MiB_cache128k_fpu.zip`
+
+The same configuration at 45.45 MHz with the earlier cores.
 
 A Sun-3/60 with its **MC68881** on the **QMTech Wukong V3**
 (xc7a100tfgg676-**1**).
@@ -53,7 +101,7 @@ with a zero-wait FPU (WNS +0.119 ns) and gives the same results within 3%;
 
 Load it as the one below (`unzip`, then `syn/program.tcl` with the `.bit`).
 
-## Previous: `sun3_60_wukong_v3_45MHz_24MiB_cache256k.zip`
+## Older: `sun3_60_wukong_v3_45MHz_24MiB_cache256k.zip`
 
 Without the FPU.
 
