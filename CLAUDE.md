@@ -327,6 +327,22 @@ the RD68021, which is pinned at 1b57478 and built with `COPROCESSOR=1`:
   against 78.1 s at 43.48 MHz), Dhrystone 6.8 s `user`. The RAM test and
   `patwr` (5:15) find no wrong word. The 4.5% faster clock gains about 3%
   on FP work, the FPU's wait state taking part of it back.
+- Cores updated (branch `cores-update`): RD68021 eb346e4 (posted writes, a
+  shorter coprocessor dialogue) and RD68884 2dfb1a9 (`RESP_HOLD`: a
+  response read may hold DSACK off up to 20 clocks, harmless here since
+  coprocessor cycles are outside the bus timeout). No port changes. In
+  simulation all pass: the PROM boot with `FPU=1`, beprobe (SSW 0111, 0141,
+  0125: posted writes still fault precisely), rteprobe, nmiprobe, fpuprobe,
+  `k2` after sccie. The new RD68021 is slower in this design, so 45.45 MHz
+  no longer builds:
+
+  | V3, all features, 24 MiB | 1b57478 / 557e806 | eb346e4 / 2dfb1a9 |
+  |---|---|---|
+  | `CPU_DIV=22`, 256 KiB, no FPU | +0.198 ns | -0.782 ns (120 paths: 94 bus unit to fetch unit, 26 in the sequencer) |
+  | `CPU_DIV=22`, 128 KiB, FPU, `FPU_WAIT=1` | +0.186 ns | -0.539 ns (113 paths: 64 bus unit to fetch unit, 19 bus unit to SCSI, 9 to the bridge, 20 in the sequencer) |
+  | `CPU_DIV=23`, 128 KiB, FPU, `FPU_WAIT=1` | | +0.082 ns |
+
+  The failing paths start at the bus unit's falling-edge `early_q`.
 
 ## Commands
 
