@@ -370,6 +370,21 @@ the RD68021, which is pinned at 1b57478 and built with `COPROCESSOR=1`:
     `FPU_WAIT=1`, everything on): WNS +0.219 ns, WHS +0.022 ns;
     23,335 LUTs (+1,185 over the MC68881 build), 11,815 registers
     (+365), 91 of 135 BRAM tiles (+1.5), 11 DSPs.
+  - On the board, that build boots SunOS 4.1.1 from the card (fsck clean,
+    `bwtwo0`). Same binaries as with the MC68881 (both builds 43.48 MHz):
+
+    | | MC68881 | MC68882 |
+    |---|---|---|
+    | Dhrystone 1.1 (`user`) | 6.6 s | 6.6 s |
+    | FP program, gcc 2.3.3 `-m68881` | 27.5 s | 23.2 s |
+    | FP program, `cc -f68881` | 62.2 s | 57.6 s |
+    | Whetstone (`-m68881`, 1,000 loops) | 65.1 s, 1.5 MIPS | 55.5 s, 1.8 MIPS |
+    | `patwr` (32 MiB, 0 wrong) | 4:49 | 4:52 |
+
+    The FP program prints the same digits. The RAM test finds no wrong
+    word. Run straight after another memtest, one process can get `malloc
+    failed`, with nothing tested: SunOS still holds swap reserved
+    (`pstat -s`: 9.7 MB reserved at rest, of 32 MB of swap).
 
 ## Commands
 
