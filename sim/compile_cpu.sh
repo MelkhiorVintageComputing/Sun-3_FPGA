@@ -53,7 +53,9 @@ compile_cpu() {
 				"$fp/rtl/gen/rd68884_ucode_pkg.sv" \
 				"$fp/rtl/gen/rd68884_crom.sv" \
 				"$fp/rtl/gen/rd68884_ucode_rom.sv" \
+				"$fp/rtl/gen/rd68885_ucode_rom.sv" \
 				"$fp/rtl/rd68884_sync.sv" \
+				"$fp/rtl/rd68884_cu_decode.sv" \
 				"$fp/rtl/rd68884_biu.sv" \
 				"$fp/rtl/rd68884_regfile.sv" \
 				"$fp/rtl/rd68884_seq.sv" \

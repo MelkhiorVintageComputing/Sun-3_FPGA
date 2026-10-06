@@ -17,6 +17,8 @@
 //                        cycle ends in BERR, i.e. an F-line trap
 //   SUN3_FPU_WAIT        the FPU's same-clock bus front end: 0 or 1 wait
 //                        state (RD68884 BUS_SYNC_WAIT; default 0)
+//   SUN3_FPU_MODEL       68881 (RD68884, default) or 68882 (RD68885, the
+//                        same RTL with the MC68882's overlap and frames)
 //   SUN3_HAS_DVMA        derived, not set: a DVMA master exists (either of the two)
 //   SUN3_WB_FIFO         the memory bridge through two dual-clock FIFOs
 //                        (sun3_fifo_bridge.v): writes acknowledged when queued,
@@ -66,6 +68,9 @@
 
 `ifndef SUN3_FPU_WAIT
  `define SUN3_FPU_WAIT 0
+`endif
+`ifndef SUN3_FPU_MODEL
+ `define SUN3_FPU_MODEL 68881
 `endif
 
 `ifndef SUN3_MEM_MIB

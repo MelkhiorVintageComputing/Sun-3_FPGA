@@ -356,6 +356,20 @@ the RD68021, which is pinned at 1b57478 and built with `COPROCESSOR=1`:
 
   The FP program prints the same digits; the RAM test (20 MiB, then two
   12 MiB processes at once) finds no wrong word.
+- The MC68882 (branch `rd68885`): RD68884 0595f34 builds RD68885, the same
+  RTL with the MC68882's conversion unit (the next instruction's dialog and
+  operand conversion overlapping the previous one's execution), its
+  frames (idle $1F38, 56 bytes; busy $1FD4) and exception rule, as
+  `MODEL = 68882` on `rd68884_top`. Here `FPU=1 FPU_MODEL=68882`
+  (`SUN3_FPU_MODEL`, default 68881; tag `-fpu82`). Two new files in both
+  flows: `rd68884_cu_decode.sv`, `gen/rd68885_ucode_rom.sv`.
+  - fpuprobe passes in simulation with it, and with the MC68881 model of
+    the same submodule (the 68882 run elaborates
+    `rd68885_ucode_rom`; FSAVE/FRESTORE round-trips the larger frame).
+  - V3, the reference configuration with it (`CPU_DIV=23`, 128 KiB,
+    `FPU_WAIT=1`, everything on): WNS +0.219 ns, WHS +0.022 ns;
+    23,335 LUTs (+1,185 over the MC68881 build), 11,815 registers
+    (+365), 91 of 135 BRAM tiles (+1.5), 11 DSPs.
 
 ## Commands
 

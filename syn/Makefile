@@ -12,7 +12,7 @@
 #   make clean               drop the Vivado output (clean-ip: the MIG too)
 #
 # Knobs: CPU_HZ (20000000), CPU_DIV (56: 17.86 MHz, wins), BOARD (v1s1), CPU (suska|rd68021),
-# ETH (0|1), FB (1), SCSI (0), DISK_OFF_MIB (0), WB_FIFO (1), WB_CACHE (= WB_FIFO), WB_CACHE_IDX (9), VIDEO (0), FB_CONSOLE (0), FPU (0), FPU_WAIT (0), MEM_MIB (16), ROM (noparity|pristine|fast), ROM_VER (1.9),
+# ETH (0|1), FB (1), SCSI (0), DISK_OFF_MIB (0), WB_FIFO (1), WB_CACHE (= WB_FIFO), WB_CACHE_IDX (9), VIDEO (0), FB_CONSOLE (0), FPU (0), FPU_WAIT (0), FPU_MODEL (68881), MEM_MIB (16), ROM (noparity|pristine|fast), ROM_VER (1.9),
 # ALLOW_PW (0), HW_URL (localhost:3121).
 #
 # Nothing here is committed; everything lands in ../build/syn.  Vivado runs
@@ -64,6 +64,7 @@ FB_CONSOLE ?= 0
 # The MC68881 (RD68884, CPU=rd68021 only) and its bus wait states (0 or 1).
 FPU     ?= 0
 FPU_WAIT ?= 0
+FPU_MODEL ?= 68881
 # The 3/60's on-board video memory (the PROM relies on it; see CLAUDE.md).
 FB      ?= 1
 # The board has 256 MiB; a 3/60 takes at most 24 MB, and the old build ran 16.
@@ -87,7 +88,7 @@ ROMFILE = bootrom_sun3_60_v$(ROM_VER)_$(ROM)_32bits.vh
 SYNDIR  = $(TOP)/build/syn
 IPDIR   = $(TOP)/build/ip/$(BOARD)/sun3_mig
 # Every knob that changes the bitstream is in its directory's name.
-OUTDIR  = $(SYNDIR)/vivado/$(BOARD)-$(CPU)-cpu$(CPU_MHZ_TAG)$(if $(CPU_DIV),-div$(CPU_DIV),)-$(MEM_MIB)m-v$(ROM_VER)-$(ROM)$(if $(filter 1,$(ETH)),-eth,)$(if $(filter 0,$(FB)),-nofb,)$(if $(filter 1,$(SCSI)),-scsi$(if $(filter-out 0,$(DISK_OFF_MIB)),-off$(DISK_OFF_MIB)m),)$(if $(filter 1,$(WB_FIFO)),-wbfifo,)$(if $(filter 1,$(WB_CACHE)),-wbcache$(if $(filter-out 9,$(WB_CACHE_IDX)),$(WB_CACHE_IDX)),)$(if $(filter 1,$(VIDEO)),-video,)$(if $(filter 1,$(FB_CONSOLE)),-fbcon,)$(if $(filter 1,$(FPU)),-fpu$(if $(filter-out 0,$(FPU_WAIT)),w$(FPU_WAIT)),)
+OUTDIR  = $(SYNDIR)/vivado/$(BOARD)-$(CPU)-cpu$(CPU_MHZ_TAG)$(if $(CPU_DIV),-div$(CPU_DIV),)-$(MEM_MIB)m-v$(ROM_VER)-$(ROM)$(if $(filter 1,$(ETH)),-eth,)$(if $(filter 0,$(FB)),-nofb,)$(if $(filter 1,$(SCSI)),-scsi$(if $(filter-out 0,$(DISK_OFF_MIB)),-off$(DISK_OFF_MIB)m),)$(if $(filter 1,$(WB_FIFO)),-wbfifo,)$(if $(filter 1,$(WB_CACHE)),-wbcache$(if $(filter-out 9,$(WB_CACHE_IDX)),$(WB_CACHE_IDX)),)$(if $(filter 1,$(VIDEO)),-video,)$(if $(filter 1,$(FB_CONSOLE)),-fbcon,)$(if $(filter 1,$(FPU)),-fpu$(if $(filter 68882,$(FPU_MODEL)),82)$(if $(filter-out 0,$(FPU_WAIT)),w$(FPU_WAIT)),)
 BIT     = $(abspath $(OUTDIR))/sun3_wukong_$(BOARD).bit
 BIN     = $(BIT:.bit=.bin)
 WORKDIR = $(SYNDIR)/vivado/work-$(BOARD)
@@ -124,7 +125,7 @@ bitstream: ip rom inputs | $(WORKDIR)
 		-source $(HERE)/build.tcl -tclargs $(CPU_HZ) $(if $(CPU_DIV),$(CPU_DIV),0) \
 		$(BOARD) $(CPU) $(ETH) $(MEM_MIB) $(ROMFILE) $(ALLOW_PW) $(abspath $(OUTDIR)) $(FB) \
 		$(SCSI) $(DISK_OFF_MIB) $(WB_FIFO) $(WB_CACHE) $(WB_CACHE_IDX) $(VIDEO) $(FB_CONSOLE) \
-		$(FPU) $(FPU_WAIT)
+		$(FPU) $(FPU_WAIT) $(FPU_MODEL)
 	@echo "bitstream: $(BIT)"
 	@echo "flash image: $(BIN)"
 
@@ -156,7 +157,7 @@ BUS_TRACE ?= 1
 ALLOW_NEG ?= 0
 SEED      ?= 0
 JOBS      ?= 8
-QOUTDIR = $(SYNDIR)/quartus/deca-$(CPU)-cpu$(CPU_MHZ_TAG)$(if $(CPU_DIV),-div$(CPU_DIV),)$(if $(filter-out 50,$(CPU_DUTY)),-duty$(CPU_DUTY),)-$(MEM_MIB)m-v$(ROM_VER)-$(ROM)$(if $(filter 1,$(ETH)),-eth,)$(if $(filter 0,$(FB)),-nofb,)$(if $(filter 0,$(BUS_TRACE)),-notrace,)$(if $(filter 1,$(SCSI)),-scsi$(if $(filter-out 0,$(DISK_OFF_MIB)),-off$(DISK_OFF_MIB)m),)$(if $(filter 1,$(WB_FIFO)),-wbfifo,)$(if $(filter 1,$(WB_CACHE)),-wbcache$(if $(filter-out 9,$(WB_CACHE_IDX)),$(WB_CACHE_IDX)),)$(if $(filter 1,$(VIDEO)),-video,)$(if $(filter 1,$(FB_CONSOLE)),-fbcon,)$(if $(filter 1,$(FPU)),-fpu$(if $(filter-out 0,$(FPU_WAIT)),w$(FPU_WAIT)),)$(if $(filter-out 0,$(SEED)),-seed$(SEED),)
+QOUTDIR = $(SYNDIR)/quartus/deca-$(CPU)-cpu$(CPU_MHZ_TAG)$(if $(CPU_DIV),-div$(CPU_DIV),)$(if $(filter-out 50,$(CPU_DUTY)),-duty$(CPU_DUTY),)-$(MEM_MIB)m-v$(ROM_VER)-$(ROM)$(if $(filter 1,$(ETH)),-eth,)$(if $(filter 0,$(FB)),-nofb,)$(if $(filter 0,$(BUS_TRACE)),-notrace,)$(if $(filter 1,$(SCSI)),-scsi$(if $(filter-out 0,$(DISK_OFF_MIB)),-off$(DISK_OFF_MIB)m),)$(if $(filter 1,$(WB_FIFO)),-wbfifo,)$(if $(filter 1,$(WB_CACHE)),-wbcache$(if $(filter-out 9,$(WB_CACHE_IDX)),$(WB_CACHE_IDX)),)$(if $(filter 1,$(VIDEO)),-video,)$(if $(filter 1,$(FB_CONSOLE)),-fbcon,)$(if $(filter 1,$(FPU)),-fpu$(if $(filter 68882,$(FPU_MODEL)),82)$(if $(filter-out 0,$(FPU_WAIT)),w$(FPU_WAIT)),)$(if $(filter-out 0,$(SEED)),-seed$(SEED),)
 SOF     = $(abspath $(QOUTDIR))/sun3.sof
 QARGS   = -root $(abspath $(TOP)) -board deca -cpu $(CPU) \
           -cpu_hz $(CPU_HZ) -cpu_div $(if $(CPU_DIV),$(CPU_DIV),0) -cpu_duty $(CPU_DUTY) \
