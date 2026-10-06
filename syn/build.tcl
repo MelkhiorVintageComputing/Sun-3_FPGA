@@ -2,7 +2,7 @@
 #
 #   vivado -mode batch -source syn/build.tcl \
 #       -tclargs CPU_HZ CPU_DIV BOARD CPU ETH MEM_MIB ROMFILE ALLOW_PW OUTDIR FB \
-#                SCSI DISK_OFF_MIB WB_FIFO WB_CACHE WB_CACHE_IDX VIDEO FB_CONSOLE FPU FPU_WAIT
+#                SCSI DISK_OFF_MIB WB_FIFO WB_CACHE WB_CACHE_IDX VIDEO FB_CONSOLE FPU FPU_WAIT FPU_MODEL
 #
 # Run through syn/Makefile, which owns the defaults and the output directory's
 # name (passed in, not recomputed here, so the two cannot disagree).
@@ -18,11 +18,11 @@ set top  [file normalize $here/..]
 
 source $here/boards.tcl
 
-if {[llength $argv] != 19} {
-    puts "ERROR: build.tcl wants 19 arguments (see its header), got [llength $argv]: $argv"
+if {[llength $argv] != 20} {
+    puts "ERROR: build.tcl wants 20 arguments (see its header), got [llength $argv]: $argv"
     exit 1
 }
-lassign $argv cpu_hz cpu_div board cpu eth mem_mib romfile allowpw outdir fb scsi disk_off_mib wb_fifo wb_cache wb_cache_idx video fb_console fpu fpu_wait
+lassign $argv cpu_hz cpu_div board cpu eth mem_mib romfile allowpw outdir fb scsi disk_off_mib wb_fifo wb_cache wb_cache_idx video fb_console fpu fpu_wait fpu_model
 
 # CPU_DIV names the MMCM divider directly and wins over CPU_HZ in
 # wukong_clkgen.sv, so from here on cpu_hz is the clock that will exist -- it
@@ -87,13 +87,18 @@ if {$video == 1} {
     }
     lappend defines SUN3_VIDEO
 }
-# The MC68881 (RD68884) next to the RD68021, at CpID 1.
+# The MC68881 (RD68884), or the MC68882 (RD68885, FPU_MODEL=68882), next to
+# the RD68021, at CpID 1.
 if {$fpu == 1} {
     if {$cpu ne "rd68021"} {
         puts "ERROR: FPU=1 needs CPU=rd68021 (its coprocessor interface)"
         exit 1
     }
-    lappend defines SUN3_FPU SUN3_FPU_WAIT=$fpu_wait
+    if {$fpu_model != 68881 && $fpu_model != 68882} {
+        puts "ERROR: FPU_MODEL is 68881 or 68882, not $fpu_model"
+        exit 1
+    }
+    lappend defines SUN3_FPU SUN3_FPU_WAIT=$fpu_wait SUN3_FPU_MODEL=$fpu_model
 }
 if {$fb_console == 1} {
     if {$video != 1} {
@@ -114,7 +119,7 @@ if {$wb_cache == 1} {
     lappend defines SUN3_WB_CACHE SUN3_WB_CACHE_IDX=$wb_cache_idx
 }
 
-puts "== Sun-3 for Wukong $board ($part), CPU $cpu at $cpu_hz Hz, $mem_mib MiB, PROM $romfile, ETH=$eth, FB=$fb, WB_FIFO=$wb_fifo, WB_CACHE=$wb_cache (IDX $wb_cache_idx), VIDEO=$video, FB_CONSOLE=$fb_console, FPU=$fpu (wait $fpu_wait) =="
+puts "== Sun-3 for Wukong $board ($part), CPU $cpu at $cpu_hz Hz, $mem_mib MiB, PROM $romfile, ETH=$eth, FB=$fb, WB_FIFO=$wb_fifo, WB_CACHE=$wb_cache (IDX $wb_cache_idx), VIDEO=$video, FB_CONSOLE=$fb_console, FPU=$fpu (wait $fpu_wait, model $fpu_model) =="
 if {$scsi == 1} {
     puts "== SCSI disk at $disk_off_mib MiB on the micro-SD ([expr {$disk_off_mib * 2048}] sectors) =="
 }
@@ -155,7 +160,9 @@ if {$cpu eq "rd68021"} {
             $fp/gen/rd68884_ucode_pkg.sv \
             $fp/gen/rd68884_crom.sv \
             $fp/gen/rd68884_ucode_rom.sv \
+            $fp/gen/rd68885_ucode_rom.sv \
             $fp/rd68884_sync.sv \
+            $fp/rd68884_cu_decode.sv \
             $fp/rd68884_biu.sv \
             $fp/rd68884_regfile.sv \
             $fp/rd68884_seq.sv \

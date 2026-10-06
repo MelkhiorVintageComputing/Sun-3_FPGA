@@ -321,7 +321,8 @@ module sun3_top(/* clock, reset */
    wire [1:0]  fpu_dsack_n;
    wire        fpu_dsack_oe;
 
-   rd68884_top #(.BUS_SYNC(1), .BUS_SYNC_WAIT(`SUN3_FPU_WAIT)) fpu (
+   rd68884_top #(.BUS_SYNC(1), .BUS_SYNC_WAIT(`SUN3_FPU_WAIT),
+                 .MODEL(`SUN3_FPU_MODEL)) fpu (
 			   .clk       (CLK),
 			   .rst_n     (~sys_reset),
 			   .reset_n_i (P_RESET_n),        // RESET- reaches the FPU on a 3/60

@@ -44,6 +44,8 @@ WB_CACHE_IDX ?= 9
 # FPU=1 (CPU=rd68021): the RD68884 MC68881 at CpID 1; FPU_WAIT its bus wait states
 FPU         ?= 0
 FPU_WAIT    ?= 0
+# FPU_MODEL=68882: RD68885, the MC68882 build
+FPU_MODEL   ?= 68881
 MEM_LATENCY ?= 0
 MEM_FILL    ?= 00000000
 CPU_HZ      ?= 20000000
@@ -61,9 +63,9 @@ TOP = ..
 SHELL = /bin/bash
 
 # The run directory run_xsim.sh picks, so `check' reads the right log.
-TAG := $(CPU)-v$(ROM_VER)-$(ROM)-$(MEM_MIB)m-$(ETH)$(if $(filter 1,$(SCSI)),-scsi)$(if $(filter 1,$(WB_FIFO)),-wbfifo)$(if $(filter 1,$(WB_CACHE)),-wbcache$(if $(filter-out 9,$(WB_CACHE_IDX)),$(WB_CACHE_IDX)))$(if $(filter 1,$(FPU)),-fpu$(if $(filter-out 0,$(FPU_WAIT)),w$(FPU_WAIT)))$(if $(filter-out 0,$(MEM_LATENCY)),-lat$(MEM_LATENCY))$(if $(filter-out 00000000,$(MEM_FILL)),-fill$(MEM_FILL))$(if $(filter-out 20000000,$(CPU_HZ)),-cpu$(shell echo $$(($(CPU_HZ)/1000000))))$(if $(filter-out 9600,$(BAUD)),-baud$(BAUD))$(foreach d,$(DEFINES),-$(subst =,_,$(d)))
+TAG := $(CPU)-v$(ROM_VER)-$(ROM)-$(MEM_MIB)m-$(ETH)$(if $(filter 1,$(SCSI)),-scsi)$(if $(filter 1,$(WB_FIFO)),-wbfifo)$(if $(filter 1,$(WB_CACHE)),-wbcache$(if $(filter-out 9,$(WB_CACHE_IDX)),$(WB_CACHE_IDX)))$(if $(filter 1,$(FPU)),-fpu$(if $(filter 68882,$(FPU_MODEL)),82)$(if $(filter-out 0,$(FPU_WAIT)),w$(FPU_WAIT)))$(if $(filter-out 0,$(MEM_LATENCY)),-lat$(MEM_LATENCY))$(if $(filter-out 00000000,$(MEM_FILL)),-fill$(MEM_FILL))$(if $(filter-out 20000000,$(CPU_HZ)),-cpu$(shell echo $$(($(CPU_HZ)/1000000))))$(if $(filter-out 9600,$(BAUD)),-baud$(BAUD))$(foreach d,$(DEFINES),-$(subst =,_,$(d)))
 RUNDIR := $(TOP)/build/sim/xsim-$(TAG)
-BTAG := $(BOARD)-$(BOARD_MEM)-$(CPU)-v$(ROM_VER)-$(ROM)-$(MEM_MIB)m$(if $(filter fast,$(BOARD_MEM)),$(if $(filter-out 10,$(BOARD_LATENCY)),-lat$(BOARD_LATENCY)))$(if $(filter-out 20000000,$(CPU_HZ)),-cpu$(shell echo $$(($(CPU_HZ)/1000000))))$(if $(filter 1,$(WB_FIFO)),-wbfifo)$(if $(filter 1,$(WB_CACHE)),-wbcache$(if $(filter-out 9,$(WB_CACHE_IDX)),$(WB_CACHE_IDX)))$(if $(filter 1,$(FPU)),-fpu$(if $(filter-out 0,$(FPU_WAIT)),w$(FPU_WAIT)))$(foreach d,$(DEFINES),-$(subst =,_,$(d)))
+BTAG := $(BOARD)-$(BOARD_MEM)-$(CPU)-v$(ROM_VER)-$(ROM)-$(MEM_MIB)m$(if $(filter fast,$(BOARD_MEM)),$(if $(filter-out 10,$(BOARD_LATENCY)),-lat$(BOARD_LATENCY)))$(if $(filter-out 20000000,$(CPU_HZ)),-cpu$(shell echo $$(($(CPU_HZ)/1000000))))$(if $(filter 1,$(WB_FIFO)),-wbfifo)$(if $(filter 1,$(WB_CACHE)),-wbcache$(if $(filter-out 9,$(WB_CACHE_IDX)),$(WB_CACHE_IDX)))$(if $(filter 1,$(FPU)),-fpu$(if $(filter 68882,$(FPU_MODEL)),82)$(if $(filter-out 0,$(FPU_WAIT)),w$(FPU_WAIT)))$(foreach d,$(DEFINES),-$(subst =,_,$(d)))
 BRUNDIR := $(TOP)/build/sim/board-$(BTAG)
 
 export SUN3_CPU=$(CPU)
@@ -77,6 +79,7 @@ export SUN3_WB_CACHE=$(WB_CACHE)
 export SUN3_WB_CACHE_IDX=$(WB_CACHE_IDX)
 export SUN3_FPU=$(FPU)
 export SUN3_FPU_WAIT=$(FPU_WAIT)
+export SUN3_FPU_MODEL=$(FPU_MODEL)
 export SUN3_MEM_LATENCY=$(MEM_LATENCY)
 export SUN3_MEM_FILL=$(MEM_FILL)
 export SUN3_CPU_HZ=$(CPU_HZ)
