@@ -28,6 +28,9 @@
 //   SUN3_ETH_WISH7990   the Wish7990 on the board's RTL8211EG, run as MII
 //   SUN3_WB_FIFO        the FIFO bridge (posted writes), its Wishbone side on
 //                       ui_clk
+//   SUN3_EXPBOARD       the Wukong-Sun expansion board on J12: keyboard and
+//                       mouse, ttyb, the diag LEDs (instead of PMOD J10), and
+//                       on a V1 the micro-SD for the disk
 //   BOARD_MEM_FAST      simulation only: no MIG, the Wishbone port and the
 //                       CPU clock and reset come out to the testbench
 //
@@ -49,8 +52,24 @@ module wukong_top #(
 
     output wire [1:0]  user_led,       // active low
     input  wire        user_btn,       // active low: the diag switch
-    output wire [7:0]  diag_leds0,     // PMOD J10: the Sun's diag register
+    output wire [7:0]  diag_leds0,     // the Sun's diag register: PMOD J10,
+                                       // or the expansion board's LEDs
     output wire [7:0]  extra_leds0,    // second LED header: todebug
+
+`ifdef SUN3_EXPBOARD
+    // The Wukong-Sun expansion board (syn/wukong_exp_v1.xdc, _v3.xdc).  The
+    // keyboard and mouse lines are at the connector's polarity: a 3/60 puts
+    // one 74ALS04 between its SCC and each of them (schematic sheet 4, U404),
+    // and the board's SN74LV1T125 buffers do not invert, so they are inverted
+    // here.  ttyb is at the SCC's polarity, as the CH340N wants it; the
+    // CH340N's own pin names are the other way round (its RXD is ttyb_tx).
+    output wire        kbd_tx,
+    input  wire        kbd_rx,
+    output wire        mouse_tx,       // to the connector's pin 7
+    input  wire        mouse_rx,
+    output wire        ttyb_tx,
+    input  wire        ttyb_rx,
+`endif
 
 `ifdef SUN3_ETH_WISH7990
     // RTL8211EG, run as 10/100 MII.  rx_dv, rx_er and col are PHY strap pins
@@ -81,14 +100,15 @@ module wukong_top #(
 `endif
 
 `ifdef SUN3_SCSI
-    // The micro-SD slot (J9 on a V3; a V1 has none), in SPI mode, for the
-    // on-board SCSI's disk.  Pins in syn/wukong_sd_v3.xdc, from the Sun-2
-    // project, which ran its disk from this slot.
+    // A micro-SD slot, in SPI mode, for the on-board SCSI's disk: J9 on a V3
+    // (syn/wukong_sd_v3.xdc, from the Sun-2 project, which ran its disk from
+    // this slot), the expansion board's on a V1, which has none
+    // (syn/wukong_exp_sd_v1.xdc).  Card detect is not read, and the
+    // expansion board's slot has none.
     output wire        sd_clk,           // CLK
     output wire        sd_cmd,           // CMD  -> MOSI
     input  wire        sd_dat0,          // DAT0 -> MISO
     output wire        sd_dat3,          // DAT3 -> /CS
-    input  wire        sd_cd,            // card detect (not read)
 `endif
 
 `ifdef BOARD_MEM_FAST
@@ -343,7 +363,13 @@ module wukong_top #(
        .sd_mosi_o (sd_cmd),
        .sd_miso_i (sd_dat0)
    );
-   wire _unused_sd_cd = sd_cd;
+`endif
+
+`ifdef SUN3_EXPBOARD
+   // The 3/60's U404 inverters (see the port list).
+   wire kbd_tx_scc, mouse_tx_scc;
+   assign kbd_tx   = ~kbd_tx_scc;
+   assign mouse_tx = ~mouse_tx_scc;
 `endif
 
    sun3_top machine (
@@ -354,9 +380,21 @@ module wukong_top #(
        .trace_freeze (1'b0),
        .tx          (serial_tx),
        .rx          (serial_rx),
+`ifdef SUN3_EXPBOARD
+       .ttyb_tx     (ttyb_tx),
+       .ttyb_rx     (ttyb_rx),
+       .kbd_tx      (kbd_tx_scc),
+       .kbd_rx      (~kbd_rx),
+       .mou_tx      (mouse_tx_scc),
+       .mou_rx      (~mouse_rx),
+`else
+       .ttyb_tx     (),
+       .ttyb_rx     (1'b1),          // nothing on ttyb: idle line
        .kbd_tx      (),
        .kbd_rx      (1'b1),          // no keyboard or mouse: idle lines
+       .mou_tx      (),
        .mou_rx      (1'b1),
+`endif
 `ifdef SUN3_ETH_WISH7990
        .phy_txd     (phy_mii_txd),
        .phy_tx_en   (phy_mii_tx_en),

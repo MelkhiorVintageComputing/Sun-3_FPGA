@@ -2,7 +2,7 @@
 #
 #   vivado -mode batch -source syn/build.tcl \
 #       -tclargs CPU_HZ CPU_DIV BOARD CPU ETH MEM_MIB ROMFILE ALLOW_PW OUTDIR FB \
-#                SCSI DISK_OFF_MIB WB_FIFO WB_CACHE WB_CACHE_IDX VIDEO FB_CONSOLE FPU FPU_WAIT FPU_MODEL
+#                SCSI DISK_OFF_MIB WB_FIFO WB_CACHE WB_CACHE_IDX VIDEO FB_CONSOLE FPU FPU_WAIT FPU_MODEL EXP
 #
 # Run through syn/Makefile, which owns the defaults and the output directory's
 # name (passed in, not recomputed here, so the two cannot disagree).
@@ -18,11 +18,11 @@ set top  [file normalize $here/..]
 
 source $here/boards.tcl
 
-if {[llength $argv] != 20} {
-    puts "ERROR: build.tcl wants 20 arguments (see its header), got [llength $argv]: $argv"
+if {[llength $argv] != 21} {
+    puts "ERROR: build.tcl wants 21 arguments (see its header), got [llength $argv]: $argv"
     exit 1
 }
-lassign $argv cpu_hz cpu_div board cpu eth mem_mib romfile allowpw outdir fb scsi disk_off_mib wb_fifo wb_cache wb_cache_idx video fb_console fpu fpu_wait fpu_model
+lassign $argv cpu_hz cpu_div board cpu eth mem_mib romfile allowpw outdir fb scsi disk_off_mib wb_fifo wb_cache wb_cache_idx video fb_console fpu fpu_wait fpu_model exp
 
 # CPU_DIV names the MMCM divider directly and wins over CPU_HZ in
 # wukong_clkgen.sv, so from here on cpu_hz is the clock that will exist -- it
@@ -70,10 +70,19 @@ set defines [list \
     SUN3_BOOTROM_SELECTED ]
 if {$cpu eq "rd68021"} { lappend defines SUN3_CPU_RD68021 }
 if {$eth == 1}         { lappend defines SUN3_ETH_WISH7990 }
+# The Wukong-Sun expansion board on J12 (EXP=1): its XDC is per revision,
+# the header's balls differing between a V1 (v1, v1s1) and a V3.
+set rev [string range $board 0 1]
+if {$exp == 1} { lappend defines SUN3_EXPBOARD }
 if {$scsi == 1} {
-    # The disk is the micro-SD slot, which only the V3 has.
-    if {![file exists $here/wukong_sd_$board.xdc]} {
-        puts "ERROR: SCSI=1 needs a micro-SD slot; BOARD=$board has none (V3 only)"
+    # The disk is a micro-SD slot: the V3's own, or on a V1, which has none,
+    # the expansion board's.
+    if {[file exists $here/wukong_sd_$board.xdc]} {
+        set sd_xdc $here/wukong_sd_$board.xdc
+    } elseif {$exp == 1 && [file exists $here/wukong_exp_sd_$rev.xdc]} {
+        set sd_xdc $here/wukong_exp_sd_$rev.xdc
+    } else {
+        puts "ERROR: SCSI=1 needs a micro-SD slot; BOARD=$board has none (a V3, or EXP=1 on a V1)"
         exit 1
     }
     lappend defines SUN3_SCSI
@@ -119,7 +128,7 @@ if {$wb_cache == 1} {
     lappend defines SUN3_WB_CACHE SUN3_WB_CACHE_IDX=$wb_cache_idx
 }
 
-puts "== Sun-3 for Wukong $board ($part), CPU $cpu at $cpu_hz Hz, $mem_mib MiB, PROM $romfile, ETH=$eth, FB=$fb, WB_FIFO=$wb_fifo, WB_CACHE=$wb_cache (IDX $wb_cache_idx), VIDEO=$video, FB_CONSOLE=$fb_console, FPU=$fpu (wait $fpu_wait, model $fpu_model) =="
+puts "== Sun-3 for Wukong $board ($part), CPU $cpu at $cpu_hz Hz, $mem_mib MiB, PROM $romfile, ETH=$eth, FB=$fb, WB_FIFO=$wb_fifo, WB_CACHE=$wb_cache (IDX $wb_cache_idx), VIDEO=$video, FB_CONSOLE=$fb_console, FPU=$fpu (wait $fpu_wait, model $fpu_model), EXP=$exp =="
 if {$scsi == 1} {
     puts "== SCSI disk at $disk_off_mib MiB on the micro-SD ([expr {$disk_off_mib * 2048}] sectors) =="
 }
@@ -274,8 +283,16 @@ if {$video == 1} {
     puts "== read wukong_hdmi.xdc =="
 }
 if {$scsi == 1} {
-    read_xdc $here/wukong_sd_$board.xdc
-    puts "== read wukong_sd_$board.xdc =="
+    read_xdc $sd_xdc
+    puts "== read [file tail $sd_xdc] =="
+}
+# The diag register: the expansion board's LEDs, or PMOD J10.
+if {$exp == 1} {
+    read_xdc $here/wukong_exp_$rev.xdc
+    puts "== read wukong_exp_$rev.xdc =="
+} else {
+    read_xdc $here/wukong_diag_pmod.xdc
+    puts "== read wukong_diag_pmod.xdc =="
 }
 
 # ---------------------------------------------------------------------------

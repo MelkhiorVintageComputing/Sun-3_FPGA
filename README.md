@@ -104,6 +104,7 @@ works on the bench monitor regardless.
 | `MEM_MIB` | 16 | main memory, up to 24 |
 | `FPU` | 0 | the MC68881 (RD68884), with `CPU=rd68021` |
 | `FPU_MODEL` | 68881 | 68882: the MC68882 (RD68885) instead |
+| `EXP` | 0 | Wukong: the Wukong-Sun expansion board (keyboard/mouse, ttyb, diag LEDs; the disk's micro-SD on a V1) |
 | `ROM_VER` | 1.9 | boot PROM revision (see below) |
 | `WB_FIFO`, `WB_CACHE` | 1, 1 | the FIFO memory bridge and its read cache |
 

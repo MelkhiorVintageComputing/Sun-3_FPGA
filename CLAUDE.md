@@ -560,6 +560,33 @@ of simulated time per minute at 20 MHz with the Suska core.
   it to `<outdir>/bootrom_selected_32bits.vh` and defines
   `SUN3_BOOTROM_SELECTED`. `-verilog_define` mangles a quoted string.
 
+### The Wukong-Sun expansion board (`EXP=1`, optional)
+
+`boards/Wukong/Wukong-Sun` (KiCad, a submodule) plugs into the 40-pin header
+J12: a Mini-DIN 8 for a Sun keyboard and mouse (SN74LV1T125 buffers), a
+CH340N for ttyb, eight LEDs, a micro-SD slot and a 54 MHz oscillator.
+- `EXP=1` (`SUN3_EXPBOARD`): keyboard/mouse (the second SCC's channels A
+  and B, `mouse_tx` included), ttyb (the console SCC's channel B), the diag
+  register on the board's LEDs instead of PMOD J10
+  (`syn/wukong_diag_pmod.xdc`, read only without it). On a V1, `SCSI=1`
+  then takes its disk from the board's slot (`syn/wukong_exp_sd_v1.xdc`);
+  on a V3 the disk stays in J9 and the board's slot is unused (a second
+  card someday; its balls are listed in `wukong_exp_v3.xdc`).
+- The header carries different balls on a V1 and a V3, hence
+  `syn/wukong_exp_v1.xdc` and `_v3.xdc`. Both were checked against the
+  board's schematic and the two Wukong schematics; the board's own labels
+  name V1 balls. The clock (J12.15) lands on a P-side SRCC on both (V1 Y22
+  IO_L11P_T1_SRCC_13, V3 W21 IO_L14P_T2_SRCC_13); nothing uses it yet.
+- Polarity: a 3/60 has a 74ALS04 between the keyboard SCC and each of the
+  four connector lines (schematic sheet 4, U404); the board's buffers do
+  not invert, so `wukong_top` does. The CH340N's pin names are its own:
+  `SERIAL0_RXD` is the FPGA's `ttyb_tx`. The LEDs are active high, as
+  `leds` (the inverse of the register) is.
+- The board has no pull-ups on the SD lines (`sd_dat0` gets the FPGA's),
+  none on DAT1/DAT2, no card detect, and nothing on the connector's
+  receive lines: an unplugged keyboard leaves U5/U3's inputs floating
+  (a 3/60 pulls them up with 4.7k).
+
 ### On the bench
 
 **Debug aids in the FPGA** (control space, FC 3; from the monitor: `s 3`,

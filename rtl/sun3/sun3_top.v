@@ -31,9 +31,12 @@ module sun3_top(/* clock, reset */
 	   /* serial */
 	   output wire 	     tx,
 	   input wire 	     rx,
+	   output wire 	     ttyb_tx,       // ttyb: the console SCC's channel B
+	   input wire 	     ttyb_rx,       // (tie high if unused)
 	   /* kbd, mouse */
 	   output wire 	     kbd_tx,
 	   input wire 	     kbd_rx,
+	   output wire 	     mou_tx,
 	   input wire 	     mou_rx,
 `ifdef SUN3_ETH_WISH7990
 	   /* MII eth */
@@ -174,9 +177,12 @@ module sun3_top(/* clock, reset */
 
 		  .tx(tx),
 		  .rx(rx),
+		  .ttyb_tx(ttyb_tx),
+		  .ttyb_rx(ttyb_rx),
 
 		  .kbd_tx(kbd_tx),
 		  .kbd_rx(kbd_rx),
+		  .mou_tx(mou_tx),
 		  .mou_rx(mou_rx),
 
 `ifdef SUN3_ETH_WISH7990

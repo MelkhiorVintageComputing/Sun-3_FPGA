@@ -134,7 +134,10 @@ module tb_sun3 #(
       .rx          (rx),
       .kbd_tx      (kbd_tx),
       .kbd_rx      (1'b1),          // idle line: no keyboard
+      .mou_tx      (),
       .mou_rx      (1'b1),          // idle line: no mouse
+      .ttyb_tx     (),
+      .ttyb_rx     (1'b1),          // idle line: nothing on ttyb
 `ifdef SUN3_ETH_WISH7990
       .phy_txd     (phy_txd),
       .phy_tx_en   (phy_tx_en),

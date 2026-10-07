@@ -51,9 +51,12 @@ module sun3_fpga(/* clock, reset */
 		 /* serial */
 		 output 	tx,
 		 input 		rx,
+		 output 	ttyb_tx,
+		 input 		ttyb_rx,
 		 /* kbd, mouse */
 		 output 	kbd_tx,
 		 input 		kbd_rx,
+		 output 	mou_tx,
 		 input 		mou_rx,
 `ifdef SUN3_ETH_WISH7990
 		 /* MII eth */
@@ -770,8 +773,8 @@ module sun3_fpga(/* clock, reset */
 			  // Channel B Serial Interface
 			  .rxcb(1'b0),          // Receive clock B
 			  .txcb(1'b0),          // Transmit clock B
-			  .rxdb(1'b1),          // Receive data B
-			  .txdb(),          // Transmit data B
+			  .rxdb(ttyb_rx),       // Receive data B (ttyb)
+			  .txdb(ttyb_tx),       // Transmit data B (ttyb)
 			  .ctsb_n(1'b0),        // Clear to send B (active low)
 			  .dcdb_n(1'b0),        // Data carrier detect B (active low)
 			  .syncb_n(1'b0),       // Sync B (async-mode input -> RR0[4], active low)
@@ -818,10 +821,12 @@ module sun3_fpga(/* clock, reset */
 			 .txda(kbd_tx),
 			 .ctsa_n(1'b0), .dcda_n(1'b0), .synca_n(1'b0), .rtsa_n(), .dtra_n(),
 
-			 // Channel B: mouse (receive only)
+			 // Channel B: mouse.  A mouse only talks; the transmit side is
+			 // brought out anyway, for a board that wires it to the
+			 // connector.
 			 .rxcb(1'b0), .txcb(1'b0),
 			 .rxdb(mou_rx),
-			 .txdb(),
+			 .txdb(mou_tx),
 			 .ctsb_n(1'b0), .dcdb_n(1'b0), .syncb_n(1'b0), .rtsb_n(), .dtrb_n()
 			 );
 
