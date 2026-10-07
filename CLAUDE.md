@@ -582,10 +582,12 @@ CH340N for ttyb, eight LEDs, a micro-SD slot and a 54 MHz oscillator.
   not invert, so `wukong_top` does. The CH340N's pin names are its own:
   `SERIAL0_RXD` is the FPGA's `ttyb_tx`. The LEDs are active high, as
   `leds` (the inverse of the register) is.
-- The board has no pull-ups on the SD lines (`sd_dat0` gets the FPGA's),
-  none on DAT1/DAT2, no card detect, and nothing on the connector's
-  receive lines: an unplugged keyboard leaves U5/U3's inputs floating
-  (a 3/60 pulls them up with 4.7k).
+- Pull-ups (board cfed966): 4.7k to 3.3 V on the slot's CMD and DAT0-DAT3
+  (R12-R16), as on the V3's own slot, and 4.7k to 5 V on the Mini-DIN's
+  receive lines (R2, R11), as a 3/60 has: an unplugged keyboard or mouse
+  reads as a continuous break, as on the real machine. No card detect.
+  The mouse-transmit buffer U4 is left unpopulated (out of the BOM), so
+  `mouse_tx` reaches nothing.
 
 ### On the bench
 
