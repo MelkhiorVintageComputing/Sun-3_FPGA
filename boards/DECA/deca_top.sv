@@ -270,7 +270,10 @@ module deca_top #(
        .rx          (sun_rx & ~jtag_break),
        .kbd_tx      (),
        .kbd_rx      (1'b1),          // no keyboard or mouse: idle lines
+       .mou_tx      (),
        .mou_rx      (1'b1),
+       .ttyb_tx     (),
+       .ttyb_rx     (1'b1),          // no ttyb: idle line
 `ifdef SUN3_ETH_WISH7990
        .phy_txd     (NET_TXD),
        .phy_tx_en   (NET_TX_EN),

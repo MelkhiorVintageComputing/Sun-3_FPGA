@@ -44,17 +44,8 @@ set_property -dict {PACKAGE_PIN F3 IOSTANDARD LVCMOS33} [get_ports serial_rx]
 # ---------------------------------------------------------------------------
 # The on-board LEDs and the buttons are in the revision file.
 #
-# The Sun-3 diagnostic register, on PMOD J10 (as the old LiteX build and the
-# Sun-2 have it).  Identical on V1 and V3.
-set_property -dict {PACKAGE_PIN E5 IOSTANDARD LVCMOS33} [get_ports {diag_leds0[0]}]
-set_property -dict {PACKAGE_PIN D5 IOSTANDARD LVCMOS33} [get_ports {diag_leds0[1]}]
-set_property -dict {PACKAGE_PIN E6 IOSTANDARD LVCMOS33} [get_ports {diag_leds0[2]}]
-set_property -dict {PACKAGE_PIN G5 IOSTANDARD LVCMOS33} [get_ports {diag_leds0[3]}]
-set_property -dict {PACKAGE_PIN D6 IOSTANDARD LVCMOS33} [get_ports {diag_leds0[4]}]
-set_property -dict {PACKAGE_PIN G7 IOSTANDARD LVCMOS33} [get_ports {diag_leds0[5]}]
-set_property -dict {PACKAGE_PIN G6 IOSTANDARD LVCMOS33} [get_ports {diag_leds0[6]}]
-set_property -dict {PACKAGE_PIN G8 IOSTANDARD LVCMOS33} [get_ports {diag_leds0[7]}]
-
+# The Sun-3 diagnostic register is on PMOD J10 (syn/wukong_diag_pmod.xdc) or,
+# with EXP=1, on the expansion board's LEDs (syn/wukong_exp_<rev>.xdc).
 # The second LED header, carrying sun3_fpga.v's todebug (a count of PROM
 # accesses).  Pins from Old/qmtech_wukong_V1_0.xdc (extra_leds0).
 set_property -dict {PACKAGE_PIN J4 IOSTANDARD LVCMOS33} [get_ports {extra_leds0[0]}]

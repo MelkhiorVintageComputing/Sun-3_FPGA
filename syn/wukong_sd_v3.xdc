@@ -4,7 +4,8 @@
 # Copied from the Sun-2 project.
 # The V1 board has no card slot at all -- its feature list runs camera, two
 # PMODs, a 40-pin header, switches, LEDs, HDMI, GTP and JTAG, and its schematic
-# has no Micro SD symbol -- so it gets syn/wukong_sd_v1.xdc and a PMOD instead.
+# has no Micro SD symbol -- so its disk needs the Wukong-Sun expansion board
+# (EXP=1, syn/wukong_exp_sd_v1.xdc).
 #
 # SPI mode uses four of the six lines: CLK, CMD as MOSI, DAT0 as MISO and DAT3
 # as /CS.  All six have 4.7k pull-ups on the board, which is what makes DAT3
@@ -20,7 +21,7 @@ set_property -dict {PACKAGE_PIN L4 IOSTANDARD LVCMOS33} [get_ports sd_clk]
 set_property -dict {PACKAGE_PIN J8 IOSTANDARD LVCMOS33} [get_ports sd_cmd]
 set_property -dict {PACKAGE_PIN M5 IOSTANDARD LVCMOS33} [get_ports sd_dat0]
 set_property -dict {PACKAGE_PIN J6 IOSTANDARD LVCMOS33} [get_ports sd_dat3]
-set_property -dict {PACKAGE_PIN N6 IOSTANDARD LVCMOS33} [get_ports sd_cd]
+# Card detect (N6) is not read, so there is no port for it.
 
 # The card is clocked from a divider off cpu_clk, not from a clock net, so
 # there is nothing to create_clock here.  sd_dat0 is sampled synchronously by
@@ -29,4 +30,3 @@ set_property -dict {PACKAGE_PIN N6 IOSTANDARD LVCMOS33} [get_ports sd_cd]
 # is a genuinely asynchronous input from the tools' point of view, so tell them
 # not to try to time it rather than let them meet it by accident.
 set_false_path -from [get_ports sd_dat0]
-set_false_path -from [get_ports sd_cd]
