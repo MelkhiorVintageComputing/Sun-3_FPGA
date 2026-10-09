@@ -385,6 +385,39 @@ the RD68021, which is pinned at 1b57478 and built with `COPROCESSOR=1`:
     word. Run straight after another memtest, one process can get `malloc
     failed`, with nothing tested: SunOS still holds swap reserved
     (`pstat -s`: 9.7 MB reserved at rest, of 32 MB of swap).
+- RD68021 0195fd8 (branch `rd68021-update`, 24 commits past eb346e4: bus
+  unit rework -- every strobe from a flip-flop, DBEN active low, the
+  arbiter's seven states, HALT and retry per the manual, IPEND from a
+  rising-edge flop -- plus RTE frame checks and instruction fixes). The only
+  port change is `dben_o` -> `dben_n_o`; nothing here reads DBEN. In
+  simulation all pass: the PROM boot with `FPU=1`, beprobe (SSW 0111, 0141,
+  0125), rteprobe, nmiprobe, fpuprobe and `k2` after sccie.
+  - The reference configuration (128 KiB, MC68881, `FPU_WAIT=1`,
+    everything on) at 43.48 MHz fails: WNS -0.715 ns, 197 endpoints. 148
+    of them run from the DVMA bridge's falling-edge `as_reg` through the
+    page map and the shared DSACK into the CPU's `op_data_reg` (16
+    levels, half a period): the new bus unit's termination logic is
+    longer. The CPU's own paths fail too (bus unit to fetch unit -0.463 ns,
+    sequencer -0.384 ns), so a slower clock is needed regardless.
+  - At 40 MHz (`CPU_DIV=25`): WNS +0.524 ns, WHS +0.008 ns; 22,465 LUTs,
+    11,467 registers, 89.5 BRAM tiles. 41.67 MHz would leave the DVMA path
+    about 0.2 ns short (half a period gains only 0.5 ns); not built.
+  - On the board, the 40 MHz build boots SunOS 4.1.1 from the card (fsck
+    clean, `bwtwo0`, `le0`). Per clock the core is as fast as eb346e4: each
+    time below is the 43.48 MHz one times the clock ratio (1.087), and the
+    FP program prints the same digits.
+
+    | V3, 128 KiB, MC68881, `FPU_WAIT=1` | eb346e4, 43.48 MHz | 0195fd8, 40 MHz |
+    |---|---|---|
+    | Dhrystone 1.1 (`user`) | 6.6 s | 7.2 s |
+    | FP program, gcc 2.3.3 `-m68881` | 27.5 s | 29.8 s |
+    | FP program, `cc -f68881` | 62.2 s | 67.7 s |
+    | Whetstone (`-m68881`, 1,000 loops) | 65.1 s, 1.5 MIPS | 70.7 s, 1.4 MIPS |
+    | `patwr` (32 MiB, 0 wrong) | 4:49 | 4:55 |
+
+    The RAM test (20 MiB, then two 12 MiB processes at once) finds no
+    wrong word. A first try had no card in J9: the PROM's `sd(0,0,0)`
+    then fails with sense `70 0 2 ... 3A` (not ready, medium not present).
 
 ## Commands
 
