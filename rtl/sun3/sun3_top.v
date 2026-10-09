@@ -390,7 +390,7 @@ module sun3_top(/* clock, reset */
 			   .as_oe(as_oe),
 			   .ds_n_o(DSn),
 			   .ds_oe(ds_oe),
-			   .dben_o(DBENn),
+			   .dben_n_o(DBENn),  // active low (RD68021 a92b2b1; it was dben_o)
 			   .dben_oe(dben_oe),
 			   .dsack_n_i(cpu_dsack_n),  // [1] is DSACK1; sample both on the same edge
 
