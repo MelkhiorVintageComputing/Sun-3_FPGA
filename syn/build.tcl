@@ -2,7 +2,7 @@
 #
 #   vivado -mode batch -source syn/build.tcl \
 #       -tclargs CPU_HZ CPU_DIV BOARD CPU ETH MEM_MIB ROMFILE ALLOW_PW OUTDIR FB \
-#                SCSI DISK_OFF_MIB WB_FIFO WB_CACHE WB_CACHE_IDX VIDEO FB_CONSOLE FPU FPU_WAIT FPU_MODEL EXP
+#                SCSI DISK_OFF_MIB WB_FIFO WB_CACHE WB_CACHE_IDX VIDEO FB_CONSOLE FPU FPU_WAIT FPU_MODEL EXP EFFORT
 #
 # Run through syn/Makefile, which owns the defaults and the output directory's
 # name (passed in, not recomputed here, so the two cannot disagree).
@@ -18,11 +18,11 @@ set top  [file normalize $here/..]
 
 source $here/boards.tcl
 
-if {[llength $argv] != 21} {
-    puts "ERROR: build.tcl wants 21 arguments (see its header), got [llength $argv]: $argv"
+if {[llength $argv] != 22} {
+    puts "ERROR: build.tcl wants 22 arguments (see its header), got [llength $argv]: $argv"
     exit 1
 }
-lassign $argv cpu_hz cpu_div board cpu eth mem_mib romfile allowpw outdir fb scsi disk_off_mib wb_fifo wb_cache wb_cache_idx video fb_console fpu fpu_wait fpu_model exp
+lassign $argv cpu_hz cpu_div board cpu eth mem_mib romfile allowpw outdir fb scsi disk_off_mib wb_fifo wb_cache wb_cache_idx video fb_console fpu fpu_wait fpu_model exp effort
 
 # CPU_DIV names the MMCM divider directly and wins over CPU_HZ in
 # wukong_clkgen.sv, so from here on cpu_hz is the clock that will exist -- it
@@ -128,7 +128,7 @@ if {$wb_cache == 1} {
     lappend defines SUN3_WB_CACHE SUN3_WB_CACHE_IDX=$wb_cache_idx
 }
 
-puts "== Sun-3 for Wukong $board ($part), CPU $cpu at $cpu_hz Hz, $mem_mib MiB, PROM $romfile, ETH=$eth, FB=$fb, WB_FIFO=$wb_fifo, WB_CACHE=$wb_cache (IDX $wb_cache_idx), VIDEO=$video, FB_CONSOLE=$fb_console, FPU=$fpu (wait $fpu_wait, model $fpu_model), EXP=$exp =="
+puts "== Sun-3 for Wukong $board ($part), CPU $cpu at $cpu_hz Hz, $mem_mib MiB, PROM $romfile, ETH=$eth, FB=$fb, WB_FIFO=$wb_fifo, WB_CACHE=$wb_cache (IDX $wb_cache_idx), VIDEO=$video, FB_CONSOLE=$fb_console, FPU=$fpu (wait $fpu_wait, model $fpu_model), EXP=$exp, EFFORT=$effort =="
 if {$scsi == 1} {
     puts "== SCSI disk at $disk_off_mib MiB on the micro-SD ([expr {$disk_off_mib * 2048}] sectors) =="
 }
@@ -309,7 +309,13 @@ set_msg_config -id {Synth 8-6901} -new_severity ERROR
 # a critical warning (a `concat' once took the clock groups with it).
 set_msg_config -id {Designutils 20-1307} -new_severity ERROR
 
-synth_design -top wukong_top -part $part \
+# EFFORT (syn/Makefile): 0, Vivado's defaults for synthesis and Explore for
+# placement and routing; 1 adds an aggressive physical optimisation before
+# routing and another after it; 2 also synthesises for performance and places
+# with ExtraTimingOpt.  Each step up costs build time, not area to speak of.
+set synth_opts {}
+if {$effort >= 2} { lappend synth_opts -directive PerformanceOptimized }
+synth_design -top wukong_top -part $part {*}$synth_opts \
     -include_dirs [list $outdir $top/rtl/sun3 $top/build/rom] \
     -verilog_define $defines \
     -generic CPU_CLK_HZ=$cpu_hz \
@@ -356,9 +362,18 @@ if {$wb_fifo == 1} {
 }
 
 opt_design
-place_design -directive Explore
-phys_opt_design
+place_design -directive [expr {$effort >= 2 ? "ExtraTimingOpt" : "Explore"}]
+if {$effort >= 1} {
+    phys_opt_design -directive AggressiveExplore
+} else {
+    phys_opt_design
+}
 route_design -directive Explore
+# After routing, physical optimisation sees the real wire delays: what is
+# left of a few near-miss paths is often recovered here.
+if {$effort >= 1} {
+    phys_opt_design -directive AggressiveExplore
+}
 
 write_checkpoint -force $outdir/post_route.dcp
 report_utilization    -file $outdir/utilization.rpt

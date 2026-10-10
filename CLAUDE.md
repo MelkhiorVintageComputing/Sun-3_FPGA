@@ -418,6 +418,37 @@ the RD68021, which is pinned at 1b57478 and built with `COPROCESSOR=1`:
     The RAM test (20 MiB, then two 12 MiB processes at once) finds no
     wrong word. A first try had no card in J9: the PROM's `sd(0,0,0)`
     then fails with sense `70 0 2 ... 3A` (not ready, medium not present).
+- RD68021 8727c9c (branch `rd68021-reset`): the RESET pin now resets the
+  processor, sparing the data and address registers, USP, MSP, SFC, DFC
+  and CAAR as the manual says, and leaving the arbiter running. Nothing
+  here changes: the CPU's `reset_n_i` sees only the board reset
+  (`RESET_INn = ~sys_reset`), never its own RESET instruction, which drives
+  `P_RESET_n` for the rest of the machine (SCCs, LANCE, FPU). Simulation
+  as before: all pass.
+  - Timing: 40 MHz now fails, WNS -0.362 ns, 35 endpoints, all one
+    half-period loop: the CPU's falling-edge `ds_q`, out through the MMU
+    and the cache's same-clock hit to DSACK (about 4.1 ns, 6 levels,
+    ours), then inside the CPU through `req_valid`, the arbiter state and
+    the `bgack` synchroniser into `op_data_reg` (about 7.8 ns, 12 levels).
+    0195fd8 met it with +0.524 ns. At 38.46 MHz (`CPU_DIV=26`): WNS
+    +0.148 ns, WHS +0.008 ns.
+  - On the board at 38.46 MHz: SunOS boots from the card; Dhrystone 7.5 s,
+    the FP program 31.1 s (gcc) and 70.4 s (`cc`), same digits,
+    Whetstone 73.5 s (1.4 MIPS), `patwr` 5:07, RAM test clean: 0195fd8's
+    numbers scaled by the clock. `halt`, then `k2` at the monitor,
+    reboots through the self test to `login:`.
+  - `EFFORT=1` (syn/Makefile, tag `-e1`) brings 40 MHz back: WNS +0.034 ns,
+    WHS +0.013 ns, 22,609 LUTs. It runs `phys_opt_design -directive
+    AggressiveExplore` before routing and again after it. After routing
+    the design was at -0.620 ns (worse than the default flow's -0.362); the
+    post-route pass gained 0.728 ns, mostly by swapping LUT inputs on
+    the critical paths (0.366) and moving single cells (0.156), and
+    added 21 LUT1s for hold. About 7 minutes more than the default flow.
+    `EFFORT=2` adds `synth_design -directive PerformanceOptimized` and
+    `place_design -directive ExtraTimingOpt` (not tried yet). On the
+    board: SunOS boots, and Dhrystone 7.2 s, FP program 29.8 s (gcc) and
+    67.7 s (`cc`), Whetstone 70.7 s, `patwr` 5:00, RAM test clean: the
+    same as 0195fd8 at 40 MHz.
 
 ## Commands
 
@@ -429,7 +460,7 @@ the RD68021, which is pinned at 1b57478 and built with `COPROCESSOR=1`:
 | `make -C sim board` | the board top (`tb_wukong` + `wukong_top`), behavioural clocks and a Wishbone RAM with `BOARD_LATENCY` (10) wait states; `BOARD_MEM=ddr3` for the real MIG + Micron model instead (calibration and first accesses only: far too slow to boot) |
 | `make -C sim board-check` | as `check`, for the last board run |
 | `make -C syn ip` | generate MIG from `syn/mig/sun3_mig.prj` into `build/ip/<BOARD>/` |
-| `make -C syn bitstream` | Vivado non-project build into `build/syn/vivado/<tag>/`; fails on negative WNS/WHS or a pulse-width violation. Knobs: `BOARD` (v1s1), `CPU`, `ETH` (0), `SCSI` (0), `WB_FIFO` (1), `WB_CACHE` (= `WB_FIFO`), `WB_CACHE_IDX` (9), `MEM_MIB` (16), `ROM` (noparity), `CPU_HZ` (20 MHz), `CPU_DIV` |
+| `make -C syn bitstream` | Vivado non-project build into `build/syn/vivado/<tag>/`; fails on negative WNS/WHS or a pulse-width violation. Knobs: `BOARD` (v1s1), `CPU`, `ETH` (0), `SCSI` (0), `WB_FIFO` (1), `WB_CACHE` (= `WB_FIFO`), `WB_CACHE_IDX` (9), `MEM_MIB` (16), `ROM` (noparity), `CPU_HZ` (20 MHz), `CPU_DIV`, `EFFORT` (0; 1 and 2 add physical optimisation passes, slower) |
 | `make -C syn program` / `flash` | JTAG / SPI flash, same knobs (`HW_URL`, default localhost:3121) |
 | `make -C sim check` | grep that run's `console.log` for a good boot (self test, banner, `MEM_MIB` MB installed, prompt). **Does not run anything**: rerun `xsim` first |
 | `make -C syn bitstream BOARD=deca` | the DECA under Quartus (`syn/quartus.tcl`) into `build/syn/quartus/<tag>/sun3.sof`; fails on negative slack (`ALLOW_NEG=1`). Defaults `CPU=rd68021 CPU_DIV=60`; extra knobs `CPU_DUTY`, `BUS_TRACE`, `SEED` |
