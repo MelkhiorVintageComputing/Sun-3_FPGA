@@ -627,8 +627,9 @@ of simulated time per minute at 20 MHz with the Suska core.
 ### The Wukong-Sun expansion board (`EXP=1`, optional)
 
 `boards/Wukong/Wukong-Sun` (KiCad, a submodule) plugs into the 40-pin header
-J12: a Mini-DIN 8 for a Sun keyboard and mouse (SN74LV1T125 buffers), a
-CH340N for ttyb, eight LEDs, a micro-SD slot and a 54 MHz oscillator.
+J12: a Mini-DIN 8 for a Sun keyboard and mouse (SN74LV1T04 inverting level
+shifters), a CH342K dual USB serial port (UART0 is ttyb, UART1 unused), eight
+LEDs, a micro-SD slot and a 54 MHz oscillator. Matched here: board 7f17ec7.
 - `EXP=1` (`SUN3_EXPBOARD`): keyboard/mouse (the second SCC's channels A
   and B, `mouse_tx` included), ttyb (the console SCC's channel B), the diag
   register on the board's LEDs instead of PMOD J10
@@ -642,16 +643,22 @@ CH340N for ttyb, eight LEDs, a micro-SD slot and a 54 MHz oscillator.
   name V1 balls. The clock (J12.15) lands on a P-side SRCC on both (V1 Y22
   IO_L11P_T1_SRCC_13, V3 W21 IO_L14P_T2_SRCC_13); nothing uses it yet.
 - Polarity: a 3/60 has a 74ALS04 between the keyboard SCC and each of the
-  four connector lines (schematic sheet 4, U404); the board's buffers do
-  not invert, so `wukong_top` does. The CH340N's pin names are its own:
-  `SERIAL0_RXD` is the FPGA's `ttyb_tx`. The LEDs are active high, as
-  `leds` (the inverse of the register) is.
+  four connector lines (schematic sheet 4, U404). The board's SN74LV1T04
+  invert as those do (since 2c7de34; the first revision's SN74LV1T125 did
+  not, and `wukong_top` inverted then), so the SCC lines go straight to the
+  pins. The CH342K's net names are its own: `SERIAL0_RXD` (J12.25) is the
+  FPGA's `ttyb_tx`, `SERIAL0_TXD` (J12.23) its `ttyb_rx` -- swapped from
+  the CH340N revision. UART1 is on J12.19 (TXD1, an FPGA input) and J12.21
+  (RXD1, an output); nothing uses it, its balls are noted in the XDCs. The
+  CH342K runs on the Wukong's 3.3 V alone (VDD5 = V3 = VIO), the
+  datasheet's self-powered scheme. The LEDs are active high, as `leds`
+  (the inverse of the register) is.
 - Pull-ups (board cfed966): 4.7k to 3.3 V on the slot's CMD and DAT0-DAT3
   (R12-R16), as on the V3's own slot, and 4.7k to 5 V on the Mini-DIN's
   receive lines (R2, R11), as a 3/60 has: an unplugged keyboard or mouse
   reads as a continuous break, as on the real machine. No card detect.
-  The mouse-transmit buffer U4 is left unpopulated (out of the BOM), so
-  `mouse_tx` reaches nothing.
+  The mouse-transmit inverter U4 is populated again: `mouse_tx` drives the
+  Mini-DIN's pin 7, as a 3/60's TXD1 drives its connector's pin 7.
 
 ### On the bench
 

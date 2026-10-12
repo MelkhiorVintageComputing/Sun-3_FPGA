@@ -58,11 +58,11 @@ module wukong_top #(
 
 `ifdef SUN3_EXPBOARD
     // The Wukong-Sun expansion board (syn/wukong_exp_v1.xdc, _v3.xdc).  The
-    // keyboard and mouse lines are at the connector's polarity: a 3/60 puts
-    // one 74ALS04 between its SCC and each of them (schematic sheet 4, U404),
-    // and the board's SN74LV1T125 buffers do not invert, so they are inverted
-    // here.  ttyb is at the SCC's polarity, as the CH340N wants it; the
-    // CH340N's own pin names are the other way round (its RXD is ttyb_tx).
+    // keyboard and mouse lines are at the SCC's polarity: a 3/60 puts one
+    // 74ALS04 between its SCC and each of them (schematic sheet 4, U404), and
+    // the board does the same with its SN74LV1T04 level shifters (Wukong-Sun
+    // 2c7de34; the first boards' SN74LV1T125 did not invert).  ttyb is the
+    // CH342K's UART0, at the SCC's polarity too.
     output wire        kbd_tx,
     input  wire        kbd_rx,
     output wire        mouse_tx,       // to the connector's pin 7
@@ -365,13 +365,6 @@ module wukong_top #(
    );
 `endif
 
-`ifdef SUN3_EXPBOARD
-   // The 3/60's U404 inverters (see the port list).
-   wire kbd_tx_scc, mouse_tx_scc;
-   assign kbd_tx   = ~kbd_tx_scc;
-   assign mouse_tx = ~mouse_tx_scc;
-`endif
-
    sun3_top machine (
        .CLK         (cpu_clk),
        .clk4m9152   (serial_clk),
@@ -383,10 +376,10 @@ module wukong_top #(
 `ifdef SUN3_EXPBOARD
        .ttyb_tx     (ttyb_tx),
        .ttyb_rx     (ttyb_rx),
-       .kbd_tx      (kbd_tx_scc),
-       .kbd_rx      (~kbd_rx),
-       .mou_tx      (mouse_tx_scc),
-       .mou_rx      (~mouse_rx),
+       .kbd_tx      (kbd_tx),
+       .kbd_rx      (kbd_rx),
+       .mou_tx      (mouse_tx),
+       .mou_rx      (mouse_rx),
 `else
        .ttyb_tx     (),
        .ttyb_rx     (1'b1),          // nothing on ttyb: idle line

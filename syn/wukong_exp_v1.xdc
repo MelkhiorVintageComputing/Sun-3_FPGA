@@ -9,10 +9,10 @@
 # expansion board's own sheet (connector_V1.kicad_sch) and with Old's LiteX
 # platform.  All of it is bank 13, 3.3 V on the Wukong.
 #
-# The board's SN74LV1T125 buffers (keyboard and mouse) do not invert, so
-# wukong_top inverts those four lines itself, as a 3/60's 74ALS04 does: the
-# ports carry the connector's polarity.  The LEDs are lit by a high level
-# (anode to the FPGA through 680R).
+# The board's keyboard and mouse level shifters are SN74LV1T04 inverters
+# (Wukong-Sun 2c7de34), as a 3/60's 74ALS04 are, so the ports carry the
+# SCC's polarity.  The LEDs are lit by a high level (anode to the FPGA
+# through 680R).
 
 # Keyboard and mouse (the second Z8530: channel A keyboard, channel B mouse),
 # to the Mini-DIN 8 J2.
@@ -21,10 +21,15 @@ set_property -dict {PACKAGE_PIN W25  IOSTANDARD LVCMOS33} [get_ports kbd_rx]   ;
 set_property -dict {PACKAGE_PIN Y25  IOSTANDARD LVCMOS33} [get_ports mouse_rx] ;# J12.11 MOUSE_RX <- U3 <- J2.4
 set_property -dict {PACKAGE_PIN AA25 IOSTANDARD LVCMOS33} [get_ports mouse_tx] ;# J12.12 MOUSE_TX -> U4 -> J2.7
 
-# ttyb (the console Z8530's channel B), through the board's CH340N to USB.
-# The net names are the CH340N's: its RXD is what the FPGA sends.
-set_property -dict {PACKAGE_PIN V24  IOSTANDARD LVCMOS33} [get_ports ttyb_tx]  ;# J12.23 SERIAL0_RXD
-set_property -dict {PACKAGE_PIN V23  IOSTANDARD LVCMOS33} [get_ports ttyb_rx]  ;# J12.25 SERIAL0_TXD
+# ttyb (the console Z8530's channel B): UART0 of the board's CH342K, to USB.
+# The net names are the CH342K's: its TXD0 is what the FPGA receives.
+set_property -dict {PACKAGE_PIN V23  IOSTANDARD LVCMOS33} [get_ports ttyb_tx]  ;# J12.25 SERIAL0_RXD -> RXD0
+set_property -dict {PACKAGE_PIN V24  IOSTANDARD LVCMOS33} [get_ports ttyb_rx]  ;# J12.23 SERIAL0_TXD <- TXD0
+
+# The CH342K's UART1 is wired too, and unused (a 3/60 has no third serial
+# port):
+#   J12.19 SERIAL1_TXD <- TXD1: V26, an FPGA input
+#   J12.21 SERIAL1_RXD -> RXD1: U25, an FPGA output
 
 # The Sun's diag register, bit n on LEDn.
 set_property -dict {PACKAGE_PIN V21  IOSTANDARD LVCMOS33} [get_ports {diag_leds0[0]}] ;# J12.32 LED0
