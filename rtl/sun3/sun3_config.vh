@@ -43,7 +43,7 @@
 //                        SUN3_FB and a video output); otherwise serial A
 //   SUN3_EXPBOARD        Wukong only: the Wukong-Sun expansion board on the
 //                        40-pin header J12 (boards/Wukong/Wukong-Sun): keyboard
-//                        and mouse, ttyb (a CH340N), the diag LEDs, and on a
+//                        and mouse, ttyb (a CH342K), the diag LEDs, and on a
 //                        V1 the disk's micro-SD slot (syn/wukong_exp_*.xdc)
 //   SUN3_MEM_MIB         installed main memory, in MiB
 //   SUN3_CPU_HZ          the CPU clock (CLK), in Hz: the TOD chip counts it.
